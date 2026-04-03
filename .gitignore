@@ -1,0 +1,37 @@
+# Environments
+.env
+.venv
+venv/
+venv_setup/venv/
+v/
+ENV/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Data & Cache (Avoid uploading large datasets)
+data/raw/
+data/processed/
+data/cache/
+data/export/
+
+# Note: We will keep track of folder structure by ignoring contents but keeping the folder concept if needed.

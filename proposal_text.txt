@@ -1,0 +1,821 @@
+Abstract
+This  report  presents  the  revised  preliminary  investigation  for  an  MSc  dissertation  project  
+proposing  a  three-stage,  data-driven  pipeline  for  automated  image  captioning  in  the  grocery  
+retail  domain.  The  central  research  problem  is  the  prevalence  of  hallucination  in  Large  Vision-
+Language  Models  (VLMs)  —  the  generation  of  plausible  but  visually  unverified  content  —  which  
+renders  current  end-to-end  generative  models  unsuitable  for  operationally  critical  deployment.  
+Prior  tag-guided  captioning  approaches,  such  as  Tag2Text  and  Semantic  Compositional  
+N etworks,  have  demonstrated  that  semantic  tags  can  meaningfully  guide  caption  generation  [
+],  [ ],  yet  none  have  addressed  domain-specific  retail  challenges  or  incorporated  unsupervised  
+scenario  routing  as  a  structural  constraint  mechanism.  This  project  proposes  to  decompose  the  
+captioning  task  into  three  layers:  (1)  a  Deterministic  Tagging  Layer  employing  a  hierarchical  four-
+tier  ontology,  (2)  an  Unsupervised  Routing  Layer  that  autonomously  discovers  operational  
+scenarios  from  tag  co-occurrence  patterns,  and  (3)  a  Conditional  Captioning  Layer  using  
+structured  prompt  injection  with  Explicit  Absence  Encoding.  Ground  truth  tags  and  reference  
+captions  are  produced  via  an  LLM-Assisted  Semi-Automated  Annotation  workflow  with  student-
+led  review,  a  practical  and  academically  defensible  approach  for  MSc-level  research.  The  
+available  dataset,  sourced  from  HuggingFace,  provides  rich  file-path-embedded  metadata  —  
+campaign  type,  retail  brand,  and  product  category  —  that  directly  informs  the  Automated  
+Dynamic  Dictionary  without  requiring  external  data  sources.  The  system  will  be  evaluated  using  
+CHAIR,  POPE,  CIDEr,  SPICE,  and  a  custom  Retail  Actionability  Score  (RAS)  on  a  small-scale  
+student  evaluation  panel.
+1.  Introduction
+The  automated  interpretation  of  visual  data  in  retail  environments  has  become  an  increasingly  
+important  capability,  with  applications  spanning  shelf  audit  automation,  planogram  compliance,  
+accessibility  services,  and  smart  product  cataloguing.  Recent  advances  in  deep  learning  and  
+vision-language  pretraining  have  produced  powerful  image  captioning  systems  [ ],  yet  a  
+fundamental  tension  persists  between  generative  fluency  and  factual  fidelity.
+Large  Vision-Language  Models  trained  to  maximise  token-level  likelihood  are  inherently  
+probabilistic.  In  retail  environments  —  where  the  precise  identification  of  product  states,  fixture  
+types,  and  operational  anomalies  is  required  —  this  probabilistic  tendency  leads  to  hallucination:  
+the  generation  of  descriptions  referencing  objects,  promotions,  or  stock  conditions  that  do  not  
+appear  in  the  image  but  are  statistically  plausible  given  training  priors  [ ].  A  system  that  
+describes  a  fully-stocked  shelf  when  a  product  line  is  absent,  or  fabricates  promotional  signage  
+based  on  learned  associations,  poses  unacceptable  risks  in  operational  deployment.
+This  project  addresses  this  problem  through  a  structural  constraint  approach:  by  extracting  a  
+verified  set  of  visual  tags  prior  to  generation  and  conditioning  the  VLM  on  both  confirmed  visual  
+1
+2
+3
+4
+evidence  and  confirmed  absences,  the  model's  generative  entropy  is  reduced  and  hallucination  
+is  structurally  discouraged.  The  project  further  introduces  an  unsupervised  routing  mechanism  
+that  translates  the  tag  set  into  an  operational  task  context  autonomously,  without  reliance  on  
+manual  expert  rule  matrices.  Both  contributions  are  absent  from  the  existing  tag-guided  
+captioning  literature  [ ],  [ ],  [ ].
+2.  Research  Objectives  and  Research  Questions
+The  project  is  organised  around  one  primary  and  three  subsidiary  research  questions,  each  
+addressed  by  a  specific  experimental  component.
+Primary  Research  Question  (PRQ):  Can  a  data-driven,  tag-constrained  pipeline  —  comprising  
+hierarchical  deterministic  tagging,  unsupervised  scenario  routing,  and  explicit  absence  encoding  
+—  significantly  reduce  object  hallucination  and  increase  operational  actionability  in  VLM-
+generated  retail  image  captions  compared  to  an  unconstrained  end-to-end  baseline?
+RQ1:  Does  unsupervised  clustering  on  tag  co-occurrence  patterns  produce  semantically  valid  
+and  operationally  coherent  retail  scenario  groupings  without  manual  expert  input?
+RQ2:  Does  Explicit  Absence  Encoding  statistically  reduce  object  hallucination  rates  (CHAIR)  and  
+improve  object  existence  accuracy  (POPE)  relative  to  tag-injection-only  and  unconstrained  
+baselines?
+RQ3:  Does  persona-conditioned  captioning  via  the  automated  routing  layer  produce  captions  
+rated  as  more  operationally  actionable  (RAS)  than  flat-tagged  or  unconstrained  alternatives?
+3.  Literature  Review
+The  proposed  system  sits  at  the  intersection  of  image  captioning,  semantic  tag-guided  
+generation,  VLM  hallucination  mitigation,  and  domain-specific  visual  understanding.  This  section  
+reviews  the  most  relevant  prior  work  and  identifies  the  specific  gaps  this  project  addresses.
+3.1  Image  Captioning:  From  Statistical  to  N eural  
+Approaches
+Early  image  captioning  systems  discovered  statistical  correlations  between  image  features  and  
+descriptive  keywords  to  produce  keyword-based  annotations  of  novel  images  [ ].  The  field  has  
+since  been  transformed  by  deep  learning,  with  transformer-based  encoder-decoder  
+architectures  and  large-scale  pretraining  becoming  the  dominant  paradigm  [ ].  
+Comprehensive  surveys  of  deep  learning  captioning  approaches  consistently  identify  
+hallucination,  missing  context,  and  domain  generalisation  as  the  primary  unresolved  challenges  
+in  the  field  [ ].  Surveys  of  earlier  generation-based  and  retrieval-based  approaches  further  
+established  the  evaluation  metrics  and  benchmark  datasets  —  including  COCO  and  Flickr30K  —  
+that  remain  in  standard  use  [ ].
+1 2 5
+6
+3
+3
+7
+3.2  Tag-Guided  Image  Captioning
+The  use  of  image-level  semantic  tags  as  generative  guidance  has  a  well-established  lineage.  
+You  et  al.  proposed  a  semantic  attention  mechanism  that  selectively  attends  to  detected  
+concept  proposals  during  recurrent  generation,  demonstrating  significant  improvements  on  
+standard  benchmarks  [ ].  The  Semantic  Compositional  N etwork  (SC N )  extended  this  by  using  
+tag  detection  probabilities  to  compose  the  weight  matrices  of  an  LSTM  network,  making  
+generative  parameters  explicitly  tag-dependent  and  showing  that  soft  tag  probability  weighting  
+consistently  improves  caption  quality  [ ].  HAAV  treats  image  tags  as  one  type  of  augmented  
+view  alongside  visual  grid  features,  aggregating  heterogeneous  encodings  hierarchically  and  
+reporting  substantial  CIDEr  improvements  on  COCO  and  Flickr30K  [ ].  ViTCAP  introduced  a  
+Concept  Token  N etwork  that  predicts  semantic  concept  tokens  via  an  auxiliary  classification  
+task  and  injects  them  into  an  end-to-end  transformer  captioning  model,  achieving  competitive  
+performance  without  a  separate  region  detector  [ ].  TagAlign  (Liu  et  al.,  2023)  demonstrates  
+that  using  an  LLM  to  automatically  parse  objects  and  attributes  from  image  captions  —  and  
+training  the  vision  encoder  with  a  multi-tag  classification  loss  against  these  parsed  tags  —  
+improves  fine-grained  image-text  alignment  by  an  average  5.2 %  on  semantic  segmentation  
+benchmarks,  showing  that  LLM-aided  vocabulary  definition  produces  higher-quality  tag  
+supervision  than  rule-based  keyword-extraction  methods  such  as  N LTK  [ ].  TIPCap  (Wang  et  
+al.,  2024)  proposes  an  interactive  prompt  module  for  weakly  supervised  captioning  in  which  
+user-specified  object  tags  serve  as  corrective  signals  injected  into  the  decoder  at  inference,  
+demonstrating  that  targeted  tag  injection  can  directly  correct  factual  errors  in  generated  
+captions  without  model  re-training  [ ].
+Tag2Text  is  the  most  directly  related  prior  work,  proposing  an  image-tag-text  generation  
+scheme  in  which  a  dedicated  tag  recognition  decoder  guides  a  vision-language  model's  
+captioning  output  across  general-domain  imagery  [ ].  This  project  distinguishes  itself  from  
+Tag2Text  on  three  key  dimensions:  (i)  a  hierarchically  structured  retail  ontology  constrains  tags  
+to  operationally  meaningful,  industry-aligned  categories;  (ii)  an  unsupervised  routing  layer  
+translates  the  tag  set  into  an  operational  task  context  before  generation,  a  step  entirely  absent  
+from  Tag2Text;  and  (iii)  Explicit  Absence  Encoding  converts  confirmed  non-detections  into  
+positive  generative  constraints,  a  mechanism  not  present  in  any  prior  tag-guided  captioning  
+work.  Singh  (2025)  validates  the  hierarchical  attribute-first  generation  paradigm  in  an  e-
+commerce  context,  reporting  that  embedding  model-predicted  product  attributes  into  a  
+structured  generation  prompt  reduces  hallucination  from  12.7 %  to  7.1 %  (a  44.5 %  relative  
+improvement)  while  reducing  generation  latency  3.5 × ,  further  supporting  the  principle  that  tag-
+constrained  prompt  structures  are  more  effective  than  unconstrained  end-to-end  generation  in  
+domain-specific  settings  [ ].
+3.3  Domain-Specific  and  E-Commerce  Visual  Description  
+Generation
+8
+2
+9
+5
+10
+11
+1
+12
+While  general-domain  captioning  research  has  demonstrated  the  value  of  tag-guided  
+generation,  a  smaller  but  increasingly  relevant  body  of  work  addresses  visual  description  
+generation  in  commercial  and  retail  domains.  OPAL  (Optimized  Preference-Based  AI  for  Listings;  
+Zhang  et  al.,  2025)  proposes  a  framework  for  generating  schema-compliant  item  descriptions  
+from  product  images  using  a  fine-tuned  MLLM,  addressing  the  modality  gap  between  visual  and  
+textual  representations  through  two  data  refinement  methods:  MLLM-Assisted  Conformity  
+Enhancement  for  structured  schema  alignment  and  LLM-Assisted  Contextual  Understanding  for  
+fine-grained  visual  detail  capture,  demonstrating  consistent  improvements  in  description  quality  
+and  schema  completion  rates  over  baselines  on  real-world  e-commerce  datasets  [ ].  The  
+TU N A  framework  (Qi  et  al.,  2024)  demonstrates  that  injecting  retrieval-augmented  object  tags  
+—  covering  object  names,  attributes,  and  novel  entities  from  a  large-scale  external  datastore  —  
+into  MLLM  prompts  consistently  reduces  mention  of  non-existent  objects,  improves  
+identification  of  out-of-distribution  entities,  and  increases  attention  to  visual  details,  
+outperforming  baselines  on  12  VQA  and  multimodal  benchmarks;  crucially,  their  experiments  
+confirm  that  tags  provide  cleaner  and  more  object-specific  information  than  retrieved  captions,  
+and  that  tag-grounded  generation  is  therefore  more  effective  than  sentence-level  retrieval  for  
+domain-specific  tasks  [ ].  The  VRAP  framework  (Rivera  et  al.,  2024)  independently  validates  
+that  structured  tags  —  including  objects,  attributes,  and  relationships  extracted  via  pretrained  
+visual  encoders  and  scene  graph  parsers  —  when  incorporated  into  LLM  prompts  via  retrieval-
+augmented  prompting  achieve  state-of-the-art  performance  on  VQAv2,  GQA,  and  VizWiz  
+benchmarks,  with  offline  tag  pre-generation  reducing  inference  latency  by  40 %  [ ].  Both  
+OPAL  and  TU N A  confirm  that  domain-specific  schema  constraints  applied  through  structured  
+prompt  injection  provide  measurable  hallucination  suppression  and  description  quality  
+improvements.  However,  none  of  these  systems  address  the  multi-context  operational  diversity  
+characteristic  of  grocery  retail  environments  —  where  a  single  dataset  spans  fundamentally  
+different  task  types  (inventory  audits,  safety  inspections,  promotional  compliance)  —  nor  do  
+they  incorporate  unsupervised  task-context  routing  or  explicit  absence-signal  mechanisms  as  
+structural  constraints.
+3.4  Hallucination  Mitigation  in  VLMs
+Hallucination  in  VLMs  arises  from  the  tension  between  pixel-level  image  evidence  and  the  
+model's  learned  inductive  bias  over  plausible  image-text  associations  [ ].  ViECap  addresses  
+this  in  zero-shot  captioning  by  constructing  entity-aware  hard  prompts  that  direct  LLM  attention  
+toward  visually  confirmed  entities,  demonstrating  reduced  object  fabrication  and  improved  
+cross-domain  transfer  [ ].  VIVO  addresses  the  related  problem  of  novel  object  captioning  by  
+pretraining  on  large-scale  image-tag  pairs  using  a  Hungarian  matching  loss,  enabling  visual-tag  
+alignment  without  paired  caption  data  [ ].  While  these  approaches  confirm  that  structural  
+input  constraints  can  reduce  hallucination,  none  address  the  specific  failure  mode  of  fabricated  
+operational  states  (e.g.,  invented  promotional  offers,  false  stock-level  descriptions)  in  retail  VLM  
+deployment.
+3.5  Research  Gap
+13
+14
+15
+4
+4
+16
+The  reviewed  literature  confirms  three  converging  findings:  tag-guided  captioning  improves  
+factual  grounding  in  general  domains  [ ],  [ ],  [ ];  retrieved  or  predicted  object  tags,  when  
+injected  as  structured  prompts,  measurably  reduce  hallucination  in  MLLMs  [ ],  [ ];  and  
+schema-constrained  generation  in  e-commerce  settings  produces  more  accurate  and  
+operationally  aligned  outputs  than  unconstrained  end-to-end  generation  [ ],  [ ].  However,  
+no  existing  work:  (i)  applies  a  hierarchically  structured  retail  ontology  aligned  to  GS1  GPC  
+industry  standards  as  the  tagging  backbone;  (ii)  introduces  an  unsupervised  tag  co-occurrence  
+routing  layer  to  autonomously  assign  distinct  operational  task  contexts  to  images  at  inference  
+time;  or  (iii)  implements  Explicit  Absence  Encoding  —  converting  confirmed  non-detections  into  
+positive  generative  constraints  —  as  a  structural  hallucination  suppression  mechanism.  The  
+closest  analogues  in  domain-specific  captioning  (OPAL,  Singh  2025)  address  schema  
+compliance  in  single-product  e-commerce  listing  generation  but  operate  on  homogeneous  
+product  imagery  without  any  routing  requirement  and  without  absence-signal  mechanisms.  The  
+tag-grounded  frameworks  TU N A  and  VRAP  improve  general-domain  MLLM  performance  via  tag  
+injection  but  neither  employ  a  task-routing  layer  nor  target  the  specific  operational  failure  modes  
+of  grocery  retail  deployment.  This  project  addresses  all  three  gaps  within  a  unified,  compute-
+efficient  pipeline  designed  specifically  for  multi-context  grocery  retail  environments.
+4.  Proposed  Methodology
+The  system  implements  a  three-stage  pipeline  —  Dynamic  Context  Tagging  →  Unsupervised  
+Routing  →  Conditional  Captioning  —  in  which  each  stage  produces  a  structured  output  
+consumed  by  the  next,  enabling  independent  evaluation  and  targeted  ablation.
+4.1  Stage  1:  Dynamic  Context  Tagging  (Deterministic  
+Layer)
+Stage  1  produces  a  verified,  structured  tag  set  T  for  each  input  image  I,  including  only  visual  
+elements  that  have  crossed  defined  confidence  thresholds.  Four  extraction  modules  correspond  
+to  the  four  levels  of  the  hierarchical  ontology.
+L1  (Scene/Zone):  CLIP  (ViT-L/14)  performs  zero-shot  classification  of  the  overall  spatial  context  
+using  text  prompts  such  as  "a  photo  of  a  retail  trading  floor  aisle",  "a  photo  of  a  supermarket  
+checkout  zone",  and  "a  photo  of  a  retail  stockroom".  This  approach  leverages  CLIP's  broad  
+visual-language  alignment  without  requiring  a  separately  trained  scene  classifier  or  labelled  
+training  images.  L2  (Fixture  Category):  Grounding  DI N O  —  an  open-vocabulary  detection  
+model  capable  of  localising  objects  from  free-text  descriptions  —  identifies  planogram  fixture  
+types  (e.g.,  Gondola  Shelving,  Endcap  Display,  Pallet  Stack,  Refrigerated  Bay)  without  any  
+bounding-box  annotation  or  domain-specific  fine-tuning.  This  replaces  the  originally  planned  
+YOLOv8  fine-tuning  approach,  which  was  determined  to  be  infeasible  given  the  absence  of  
+bounding-box  annotated  training  data  and  the  time  constraints  of  an  MSc  project.  L3  (Product  
+Type):  CLIP  (ViT-L/14)  performs  zero-shot  matching  against  a  GS1  Global  Product  Classification  
+(GPC)  Brick-level  vocabulary  —  the  internationally  standardised  product  classification  schema  
+used  across  UK  grocery  retail  supply  chains  —  augmented  by  the  Automated  Dynamic  
+1 2 5
+14 15
+12 13
+Dictionary  (see  Section  4.1.1).  If  CLIP  zero-shot  precision  on  fine-grained  product  categories  falls  
+below  an  acceptable  threshold  during  Phase  1  validation,  a  lightweight  linear  probe  classifier  will  
+be  trained  on  frozen  CLIP  embeddings  of  the  300–400  annotated  images,  providing  a  data-
+efficient  fallback  that  still  requires  no  bounding-box  annotations.  L4  (Attribute/State):  
+PaddleOCR  extracts  visible  text  (price  tags,  promotional  signage),  and  a  CLIP-based  zero-shot  
+attribute  classifier  identifies  operational  states  (Empty  Shelf,  Damaged  Product,  On  Promotion)  
+via  prompt  matching  against  state-description  text  templates.
+Tags  are  classified  into  two  tiers:  Hard  Tags (confidence  >  0.85)  serve  as  absolute  generative  
+constraints,  and  Soft  Tags (confidence  0.60–0.85)  are  passed  as  probabilistic  hints.  Tags  
+scanned  for  but  not  detected  above  either  threshold  are  recorded  as  Confirmed  Absences,  
+forming  the  input  to  Stage  3's  Explicit  Absence  Encoding  mechanism.  The  initial  confidence  
+thresholds  (0.85  for  Hard  Tags;  0.60  for  Soft  Tags)  are  treated  as  starting  values  derived  from  
+standard  CLIP  zero-shot  classification  practice;  they  will  be  empirically  re-calibrated  on  the  
+validation  subset  (approximately  150  images)  using  F1  score  maximisation  against  the  human-
+reviewed  ground  truth,  and  the  final  calibrated  values  will  be  reported  in  the  dissertation.
+4.1.1  Automated  Dynamic  Dictionary  via  File-Path  
+Metadata
+A  key  innovation  of  Stage  1  is  the  Automated  Dynamic  Dictionary,  which  adapts  the  L3  
+vocabulary  to  temporal  and  contextual  factors  without  manual  database  maintenance.  Rather  
+than  relying  only  on  image  EXIF  data,  this  project  leverages  the  rich  metadata  embedded  in  the  
+dataset's  file-path  structure,  which  encodes  the  following  fields:
+Campaign  /  Season:  e.g.,  Halloween2024,  FullStores  —  directly  indicates  the  
+thematic  context  and  seasonal  period
+Retail  Brand:  e.g.,  Tesco ,  Waitrose,  Asda —  provides  brand-specific  store  format  
+and  product  range  priors
+Product  Category:  e.g.,  Food  -  Floral,  Branding  Signage —  provides  a  coarse  L2/L3  
+classification  prior  extracted  without  any  model  inference
+Store  /  Location:  e.g.,  Asda  Killingbeck —  enables  store-format-level  context  (e.g.,  
+discount  vs.  premium  positioning)
+Date  metadata:  year/month/day  from  image  capture  records
+A  lightweight  orchestrator  LLM  (e.g.,  GPT-4o-mini  via  API)  is  prompted  with  the  parsed  path  
+metadata  to  generate  a  probabilistic  list  of  expected  contextual  keywords.  For  example,  the  
+path  train/Halloween2024/Tesco/Food  -  Floral/ produces  a  dictionary  enriched  with  terms  
+such  as  Pumpkin,  Cobweb,  and  Witch  Hat  for  L3  matching.  CLIP  performs  zero-shot  matching  
+against  this  dynamically  generated  vocabulary;  matches  above  a  calibrated  threshold  ( ≥  0.65)  
+are  added  to  T  as  Probabilistic  Tags.  This  approach  turns  an  existing  dataset  structural  feature  
+—  the  file-path  hierarchy  —  into  a  zero-cost  contextual  signal,  requiring  no  additional  metadata  
+collection.
+4.1.2  Hierarchical  Retail  Ontology:  L1–L4  Tag  Schema
+Ontology  Design  Methodology. A  core  methodological  challenge  in  constructing  the  L1–L4  
+ontology  is  that  the  controlled  vocabulary  —  particularly  L1  scene  types  and  L2  fixture  types  —  
+cannot  be  reliably  derived  from  file-path  metadata  alone,  which  encodes  campaign,  brand,  and  
+coarse  product  category  but  does  not  describe  the  spatial  layout  or  fixture  structure  of  a  scene.  
+Imposing  vocabulary  by  assumption  without  domain  expertise  would  risk  producing  categories  
+that  do  not  map  onto  the  actual  visual  content  of  the  dataset.  To  address  this,  the  L1–L2  
+vocabulary  is  derived  via  a  systematic  two-pass  data-driven  induction  process  rather  than  
+specified  arbitrarily.
+In  Pass  1  (Corpus  Induction),  GPT-4o  Vision  is  applied  to  a  stratified  random  sample  of  100  
+images  drawn  from  the  dataset.  For  each  image,  GPT-4o  is  prompted  with  the  following  
+instruction:  "Describe  in  noun-phrase  form  only:  (i)  the  type  of  retail  space  or  zone  visible  in  this  
+image;  (ii)  any  display  structures  or  fixtures  present;  (iii)  the  broad  product  categories  visible;  
+and  (iv)  any  observable  operational  states  such  as  stock  levels,  promotional  signage,  or  physical  
+anomalies." The  100  free-form  noun-phrase  responses  are  then  aggregated,  and  GPT-4o  is  
+prompted  to  cluster  recurring  terms  into  a  candidate  hierarchical  taxonomy.  This  produces  an  
+initial  vocabulary  directly  grounded  in  the  actual  visual  content  of  the  dataset,  rather  than  in  
+generic  retail  assumptions.  In  Pass  2  (Standard  Alignment),  the  candidate  vocabulary  is  cross-
+referenced  with  established  industry  frameworks:  L2  fixture  types  are  aligned  with  retail  visual  
+merchandising  literature;  L3  product  types  are  mapped  directly  onto  GS1  Global  Product  
+Classification  (GPC)  Brick  nomenclature;  and  L4  operational  state  attributes  are  derived  from  
+the  operational  research  questions  guiding  this  project  —  specifically,  the  dimensions  of  stock  
+level,  promotional  state,  planogram  compliance,  safety  condition,  and  shelf  cleanliness.  The  
+finalised  vocabulary  is  simultaneously  empirically  grounded  in  the  specific  dataset,  
+terminologically  consistent  with  industry  standards,  and  operationally  relevant  to  the  project's  
+evaluation  design.  The  full  induction  procedure  and  the  final  vocabulary  list  for  each  level  will  be  
+documented  in  the  dissertation  methodology  chapter  and  included  as  an  appendix  to  ensure  
+transparency  and  reproducibility.
+The  four-tier  ontology  defines  the  controlled  vocabulary  for  all  tag  extraction  modules.  The  table  
+below  presents  the  finalised  vocabulary  at  each  level,  as  derived  through  the  two-pass  
+induction  process  described  above.  Critically,  the  L3  level  adopts  GS1  GPC  Brick  nomenclature  
+directly  as  its  product-type  vocabulary,  and  the  L4  level  adopts  the  five  operational  state  
+dimensions  derived  from  the  project's  research  questions.  Because  GS1  GPC  is  the  standardised  
+classification  schema  used  across  UK  grocery  retail  supply  chains,  L3  tags  generated  by  this  
+system  carry  industry-standard  product  terminology  that  is  compatible  with  downstream  retail  
+management  systems  (e.g.,  shelf  management  software,  inventory  databases)  without  requiring  
+terminology  translation.  This  alignment  is  both  a  methodological  design  choice  and  a  practical  
+contribution.  The  associated  detection  method  for  each  level  is  also  noted.
+L
+e
+v
+el
+Categor
+y Finalised  Vocabulary  (Two-Pass  Induction) Detection  
+Method
+L1 Scene  /  
+Zone
+Ambient  Aisle,  Fresh  Produce  Section,  Chilled  /  
+Refrigerated  Aisle,  Frozen  Section,  Checkout  /  POS  Area,  
+Promotional  Display  Area,  Storage  /  Backroom
+CLIP  zero-
+shot  
+classification
+L
+2
+Fixture  
+Type
+Gondola  Shelf,  Wall  Shelf,  End  Cap,  Open  Refrigerated  
+Case,  Freezer  Door  Unit,  Dump  Bin,  Freestanding  Display  
+Unit  (FSDU),  Checkout  Counter,  Pallet  /  Floor  Stack
+Grounding  
+DI N O  open-
+vocabulary  
+detection
+L
+3
+Product  
+Type  
+(GS1  
+GPC  
+Brick)
+Ambient  Grocery  –  Canned  Vegetables,  Fresh  Produce  –  
+Root  Vegetables,  Confectionery  –  Chocolate,  Beverages  –  
+Carbonated  Soft  Drinks,  Health  &  Beauty  –  Shampoo  (full  
+Brick  list  sourced  from  GS1  GPC  Browser)
+CLIP  zero-
+shot  +  
+Dynamic  
+Dictionary  
+(GPT-4o-mini)
+L
+4
+State  /  
+Attribute
+Stock  Level  (Full  /  Partial  /  Empty),  Promotional  State  
+(Active  Promo  /  N one),  Planogram  Compliance  (Compliant  /  
+N on-compliant),  Safety  Condition  (Clear  /  Hazard  Present),  
+Shelf  Cleanliness  (Clean  /  Untidy  /  Damaged  Packaging)
+PaddleOCR  +  
+CLIP  zero-
+shot  attribute  
+classifier
+When  L3  tags  are  injected  into  Stage  3  caption  prompts  as  Hard  or  Soft  Tags,  GS1  GPC  Brick  
+names  are  used  verbatim  (e.g.,  Beverages  –  Carbonated  Soft  Drinks ).  This  means  the  
+generated  captions  directly  reference  standardised  retail  product  vocabulary,  which  is  a  
+practical  advantage  over  free-form  product  naming.  If  CLIP  zero-shot  precision  on  fine-grained  
+L3  categories  falls  below  an  acceptable  threshold  during  Phase  1  validation,  a  lightweight  linear  
+probe  classifier  trained  on  frozen  CLIP  (ViT-L/14)  embeddings  of  the  annotated  subset  will  be  
+used  as  a  fallback  —  requiring  no  additional  bounding-box  labels  and  feasible  within  MSc  
+project  resource  constraints.
+4.2  Stage  2:  Unsupervised  Data-Driven  Routing  (Logic  
+Layer)
+Stage  2  transforms  the  tag  set  T  into  an  operational  Task  Context  K,  comprising  a  Persona  (the  
+intended  recipient  of  the  caption)  and  a  Primary  Goal  (the  information  the  caption  must  convey),  
+derived  autonomously  from  data  rather  than  from  manually  engineered  rules.
+Tags  at  levels  L1  (Scene/Zone)  and  L4  (State/Attribute)  are  selected  as  the  clustering  feature  
+space,  as  these  two  levels  most  directly  capture  the  operational  scenario of  an  image  —  
+specifically,  where  in  the  store  something  is  happening  (L1)  and  what  condition  or  anomaly  is  
+present  (L4).  L2  (fixture  type)  and  L3  (product  type)  provide  fine-grained  object  identity  but  are  
+less  discriminative  for  routing  to  a  macro-level  operational  persona.  Each  image  is  encoded  as  a  
+multi-hot  sparse  vector  over  the  combined  L1  +  L4  tag  vocabulary,  resulting  in  a  high-
+dimensional  but  sparse  feature  matrix.  Unsupervised  clustering  (K-Means  for  a  specified  
+scenario  count;  DBSCA N  for  density-based  separation)  is  applied  to  identify  statistically  
+significant  co-occurrence  patterns.  The  optimal  K  for  K-Means  is  selected  by  maximising  the  
+Silhouette  Score  and  minimising  the  Davies-Bouldin  Index  across  K  =  3  to  8.  Once  clusters  are  
+identified,  the  orchestrator  LLM  (GPT-4o-mini)  is  prompted  with  each  cluster's  tag  distribution  
+and  asked  to  assign  a  Persona  and  Primary  Goal,  producing  an  Automated  Routing  Matrix.  
+Representative  example  outputs  include:  
+{Trading  Floor  +  Out  of  Stock  +  Price  Tag  Missing}  →  Inventory  Manager  →  "Identify  the  out-of-
+stock  product  by  its  shelf  adjacency  context  and  note  the  missing  price  label"
+ and  
+{Trading  Floor  +  Product  Damaged  +  Planogram  Violation}  →  Safety  Officer  →  "Describe  the  
+hazard  type,  location,  and  severity  for  incident  logging"
+.  If  clustering  is  unstable  or  produces  non-interpretable  groups,  three  manually  seeded  scenario  
+types  (Inventory,  Safety/Compliance,  Merchandising)  will  be  used  as  a  structured  fallback,  with  
+the  clustering  failure  documented  as  a  negative  empirical  finding.
+4.3  Stage  3:  Automated  Conditional  Captioning  
+(Generative  Layer)
+Stage  3  generates  the  final  natural  language  caption  conditioned  on  the  verified  tag  set  T  and  
+the  task  context  K  using  a  Mixture  of  Prompts  (MOP)  strategy.  The  prompt  is  assembled  as  a  
+structured  object  with  zero  user  intervention,  composed  of:  (i)  Persona  and  Task  Instruction  
+from  Stage  2;  (ii)  Hard  Constraint  Tags  as  verified  visual  facts;  (iii)  Soft  Hint  Tags  with  explicit  
+uncertainty  notation;  and  (iv)  Explicit  Absence  Assertions  (e.g.,  Price _ Tags:  scanned,  count  =  0
+).
+The  Explicit  Absence  Encoding  mechanism  converts  negative  detection  outcomes  into  positive  
+assertions,  preventing  the  VLM  from  filling  unaddressed  features  with  prior-driven  fabrications  
+—  a  structural  extension  of  the  entity-aware  prompting  approach  demonstrated  in  ViECap  [ ].  
+For  high-stakes  tasks,  a  Self-Correction  loop  is  activated:  the  VLM  is  asked  to  audit  its  own  
+caption  against  the  Hard  Constraint  Tag  list  and  flag  any  mentioned  object  absent  from  the  
+verified  set.
+Given  personal  GPU  constraints,  the  generative  VLM  is  LLaVA-1.5-7B  or  Qwen-VL-Chat  (7B),  
+selected  for  strong  instruction-following  capability  within  manageable  VRAM  requirements.  For  
+final  evaluation  runs  requiring  higher  throughput,  KCL  HPC  resources  will  be  requested.  LLM  API  
+access  (GPT-4o-mini)  is  used  for  the  orchestrator  functions  in  Stages  1  and  2,  keeping  local  
+inference  load  focused  on  the  vision  models.
+5.  Data  Plan
+The  dataset  has  been  pre-secured  from  HuggingFace,  comprising  approximately  10,000  
+grocery  retail  images  across  multiple  UK  retail  brands  (Tesco,  Waitrose,  Asda,  and  others)  with  
+campaign-level,  brand-level,  and  category-level  organisation  encoded  in  the  file-path  hierarchy.
+5.1  Preprocessing
+4
+A  Laplacian  variance  filter  will  reject  images  below  a  sharpness  threshold  (calibrated  empirically  
+on  a  random  100-image  pilot  sample),  targeting  retention  of  at  least  9,000  usable  images.  File-
+path  metadata  will  be  parsed  and  stored  as  a  structured  JSO N  sidecar  for  each  image.  Privacy-
+related  preprocessing  —  face  detection  via  RetinaFace  and  Gaussian  blur  —  will  be  applied  
+before  any  VLM  inference.  The  300–400  annotated  images  will  be  divided  into  two  non-
+overlapping  subsets:  a  validation  subset (approximately  150  images),  used  for  confidence  
+threshold  calibration,  iterative  prompt  tuning,  and  system  development;  and  a  held-out  test  
+subset (approximately  150–200  images),  reserved  exclusively  for  final  ablation  evaluation  and  
+metric  reporting.  N o  model  parameters,  confidence  thresholds,  or  prompt  structures  will  be  
+adjusted  using  held-out  test  images,  ensuring  a  clean  separation  between  development  and  
+evaluation  to  prevent  inadvertent  leakage.
+5.2  LLM-Assisted  Semi-Automated  Annotation  with  
+Student  Review
+As  the  researcher  is  not  a  domain  expert,  ground  truth  annotation  follows  a  practical  LLM-
+assisted  workflow  rather  than  a  pure  manual  expert  process.  A  stratified  sample  of  300–400  
+images (selected  to  represent  the  major  L1  zones,  campaign  types,  and  operational  states  
+present  in  the  dataset)  will  be  annotated  as  follows:
+Tag  Ground  Truth:  The  researcher  directly  reviews  each  sampled  image  against  the  L1–
+L4  ontology  schema  through  visual  inspection  to  produce  validated  tag  labels.  GPT-4o  
+(with  image  input)  is  used  as  a  suggestion  generator  to  accelerate  this  process  —  its  
+proposed  tags  are  treated  as  candidates  requiring  human  confirmation  or  correction,  
+not  as  authoritative  annotations.  This  human-verification-first  design  ensures  that  the  
+tag  ground  truth  used  for  Retail-CHAIR  evaluation  is  independently  established  from  the  
+LLM  family  used  in  caption  generation,  thereby  mitigating  the  circular  reference  risk  
+inherent  in  fully  LLM-automated  pipelines.  A  50-image  subset  will  be  independently  
+reviewed  by  a  second  student  annotator  to  compute  inter-rater  reliability  (Cohen's  
+kappa),  providing  a  quantitative  quality  estimate  of  annotation  consistency  that  will  be  
+reported  in  the  dissertation.
+Reference  Captions:  For  a  subset  of  approximately  150–200  images  (used  for  CIDEr  
+and  SPICE  computation),  GPT-4o  is  prompted  to  generate  2–3  candidate  reference  
+captions  per  image.  The  researcher  reviews  and  selects  or  lightly  edits  the  most  
+factually  accurate  candidate.  It  is  explicitly  acknowledged  that  reference  captions  
+sourced  from  the  same  model  family  (GPT-4o)  as  the  LLM-as-Judge  evaluation  
+introduces  a  potential  consistency  bias  in  the  CIDEr/SPICE  scores;  these  metrics  are  
+therefore  treated  as  supplementary  caption  quality  indicators  only.  Retail-CHAIR  and  
+POPE  —  both  computed  against  the  independently  human-reviewed  tag  ground  truth  
+—  serve  as  the  primary  hallucination  metrics  and  are  not  subject  to  this  dependency.  
+This  limitation  will  be  discussed  explicitly  in  the  dissertation's  evaluation  chapter.
+5.3  Dataset  Statistics  Reporting
+The  dissertation  will  report:  (i)  distribution  of  images  across  parsed  campaign  types  and  brands;  
+(ii)  frequency  of  L4  attribute  states  (Empty,  Damaged,  On  Sale)  in  the  annotated  subset;  and  (iii)  
+number  and  proportion  of  images  per  cluster  discovered  in  Stage  2,  to  contextualise  routing  
+validity.
+6.  Evaluation  Framework
+The  evaluation  framework  is  structured  to  answer  each  research  question  through  a  
+combination  of  quantitative  pipeline  metrics,  standard  captioning  benchmarks,  and  small-scale  
+human  evaluation.
+6.1  Quantitative  Metrics
+Stage  1  —  Tag  Detection  Quality:  Precision  and  Recall  computed  against  the  300–400-image  
+annotated  ground  truth.  Dynamic  Tag  Recall:  precision  and  recall  of  the  LLM-generated  
+Dynamic  Dictionary  entries  against  the  annotated  seasonal  image  subset.
+Stage  2  —  Routing  Validity  (RQ1):  Silhouette  Score  and  Davies-Bouldin  Index  for  cluster  
+cohesion  and  separation  across  K  =  3  to  8  scenarios.  Routing  Appropriateness:  a  20–30-image  
+sample  per  cluster  is  reviewed  by  the  researcher  and  one  peer,  assessing  whether  the  LLM-
+assigned  persona  logically  reflects  the  cluster's  visual  content  (reported  as  agreement  rate).
+Stage  3  —  Hallucination  Reduction  (RQ2):  The  primary  hallucination  metric  is  Retail-CHAIR,  a  
+domain-adapted  variant  of  the  standard  CHAIR  (Caption  Hallucination  Assessment  with  Image  
+Relevance)  metric.  Standard  CHAIR  checks  whether  object  nouns  in  a  generated  caption  appear  
+in  the  COCO  reference  object  vocabulary;  Retail-CHAIR  replaces  this  vocabulary  with  the  
+project's  L1–L4  ontology  tags.  The  concrete  implementation  is  as  follows:  (1)  for  each  held-out  
+test  image,  the  manually  annotated  L1–L4  tag  set  constitutes  the  ground-truth  reference  
+vocabulary;  (2)  noun  phrases  are  extracted  from  the  generated  caption  using  spaCy  
+dependency  parsing;  (3)  each  extracted  noun  phrase  is  matched  against  the  ground-truth  tag  
+set  using  exact  string  matching  and  GS1  GPC  synonym  equivalences;  (4)  CHAIR _ i  (image-level:  
+fraction  of  images  containing  at  least  one  hallucinated  object  mention)  and  CHAIR _ s  (sentence-
+level:  fraction  of  sentences  containing  a  hallucinated  mention)  are  computed.  This  
+implementation  requires  no  retail  domain  expertise  beyond  what  is  already  encoded  in  the  
+annotation  guidelines:  the  L1–L4  ontology  itself  constitutes  the  domain  knowledge  proxy,  and  its  
+construction  draws  on  publicly  available  GS1  GPC  standards  rather  than  subjective  retail  
+judgement.  The  validity  of  Retail-CHAIR  therefore  depends  directly  on  the  quality  of  the  L1–L4  
+ontology  design  and  human  annotation  consistency  —  a  limitation  that  will  be  explicitly  
+acknowledged  in  the  dissertation's  evaluation  chapter.  POPE is  adapted  analogously:  binary  
+probing  questions  (e.g.,  "Is  there  a  promotional  shelf  label  in  this  image?",  "Is  the  shelf  fully  
+stocked?")  are  derived  directly  from  the  L3/L4  ground-truth  annotations  and  posed  to  the  model  
+as  yes/no  VQA  queries,  measuring  object  existence  accuracy  without  requiring  additional  retail  
+expertise.  LLM-as-Judge (GPT-4o)  provides  supplementary  hallucination  verification  across  
+the  full  evaluation  set  as  a  cross-validation  check  on  Retail-CHAIR  scores;  this  metric  is  treated  
+as  indicative  only  given  the  GPT-4o  circularity  concern  discussed  in  Section  5.2.
+Stage  3  —  Caption  Quality  (RQ3):  CIDEr:  evaluated  against  the  150–200-image  human-
+reference  subset.  SPICE:  scene-graph-based  semantic  evaluation,  particularly  suited  to  retail  
+scenes  requiring  accurate  object,  attribute,  and  relation  assessment  [ ].
+6.2  Human  Evaluation  (Small-Scale)
+A  Retail  Actionability  Score  (RAS)  evaluation  will  be  conducted  with  a  panel  of  5–10  fellow  
+students,  assessing  a  random  sample  of  60–90  captions (20–30  per  ablation  variant)  on  a  0–2  
+scale:  0  =  Useless,  1  =  Informative  but  non-actionable,  2  =  Actionable  (triggers  a  concrete  
+operational  task).  Given  the  small  evaluator  panel,  statistical  comparisons  will  be  limited  to  mean  
+RAS  with  standard  deviation,  and  significance  testing  (Wilcoxon  signed-rank)  will  be  applied  
+where  sample  size  permits.  The  limitations  of  small-panel  evaluation  will  be  explicitly  discussed  
+in  the  dissertation.
+6.3  Ablation  Study  (Simplified)
+Three  experimental  variants  will  be  evaluated  to  isolate  the  contribution  of  the  core  pipeline  
+components.  A  full  multi-factor  ablation  is  out  of  scope  given  time  constraints;  instead,  the  three  
+variants  are  chosen  to  directly  address  the  PRQ  and  RQ2.
+Variant Description Purpose
+Baseline  
+A
+LLaVA-1.5-7B  with  no  tag  constraints  (pure  
+end-to-end)
+Establishes  hallucination  rate  
+without  any  structural  constraint
+Baseline  
+B
+Flat  tag  injection  only  —  Hard  Tags  listed  in  
+prompt,  no  routing,  no  absence  encoding
+Isolates  the  contribution  of  
+Routing  +  Absence  Encoding
+Proposed
+ System
+Full  3-stage  pipeline:  Hard/Soft  tags,  
+Routing,  Absence  Encoding,  Self-Correction Tests  the  full  PRQ  hypothesis
+7.  Project  Timeline  and  Milestones
+The  project  runs  from  late  March  2026  to  early  August  2026  (approximately  18  weeks).  A  
+reduced-intensity  period  is  incorporated  for  the  May  examination  period.  The  scope  has  been  
+calibrated  to  be  achievable  within  this  window  while  meeting  MSc  dissertation  standards.
+Phase Period Key  Deliverables
+Int
+en
+sit
+y
+Phase  1:  
+Foundatio
+n  &  Data
+Late  
+March  
+–  Late  
+April  
+Environment  setup  (GPU,  vLLM  stack,  CLIP,  Grounding  DI N O,  
+PaddleOCR);  file-path  metadata  parser;  image  quality  filtering;  
+LLM-assisted  annotation  of  300–400  images  (human-first  tag  
+review  +  GPT-4o  suggestions);  train/validation/test  split  
+Fu
+ll
+3
+(Weeks  
+1–5)
+definition;  inter-rater  reliability  pilot  (50  images);  initial  data  
+statistics  report
+Phase  2:  
+Stage  1  
+Implemen
+tation
+Late  
+April  –  
+Early  
+May  
+(Weeks  
+5–7)
+CLIP  zero-shot  L1  classification  integration  and  evaluation;  
+Grounding  DI N O  L2  open-vocabulary  fixture  detection;  CLIP  
+zero-shot  L3  product  matching  against  GS1  GPC  vocabulary  ( +  
+linear  probe  fallback  if  needed);  PaddleOCR  +  CLIP  L4  attribute  
+classification;  Automated  Dynamic  Dictionary  pipeline;  Stage  1  
+tag  precision/recall  baseline  computed  on  validation  subset
+Fu
+ll
+Phase  3:  
+Literature
+ Review  
+Writing  
+(Exam  
+Buffer)
+May  
+(Weeks  
+8–11)
+Dissertation  Chapters  1–3  drafted  (Introduction,  Related  Work,  
+Data);  no  heavy  model  training;  code  documentation;  exam  
+preparation
+Re
+du
+ce
+d
+Phase  4:  
+Stage  2  
+&  Stage  
+3  
+Implemen
+tation
+Early  
+June  –  
+Late  
+June  
+(Weeks  
+12–15)
+K-Means/DBSCA N  clustering  on  L1 + L4  co-occurrence  vectors;  
+LLM  persona  assignment;  Routing  Matrix  generation;  Structured  
+prompt  assembly  (MOP);  Explicit  Absence  Encoding;  Self-
+Correction  loop;  end-to-end  pipeline  integration  test;  Chapters  
+4–5  (Methodology)  written  in  parallel  with  implementation
+Fu
+ll
+Phase  5:  
+Experime
+nts  &  
+Evaluatio
+n
+July  
+(Weeks  
+16–18)
+All  3  ablation  variants  run  on  held-out  test  set;  Retail-CHAIR,  
+POPE,  CIDEr,  SPICE  scores  computed;  student  panel  RAS  
+evaluation  (60–90  captions);  LLM-as-Judge  supplementary  
+scoring;  Silhouette/DB  Index  analysis;  qualitative  error  analysis  
+and  caption  case  studies;  Chapter  6  (Experiments  &  Results)  
+written  in  parallel  with  evaluation  runs
+Fu
+ll
+Phase  6:  
+Dissertati
+on  
+Completi
+on
+Late  
+July  –  
+Early  
+August  
+(Weeks  
+18–19)
+Chapters  7–8  written  (Discussion,  Conclusion);  Chapters  1–6  
+revised  incorporating  supervisor  feedback  cycles  (minimum  two  
+feedback  rounds);  bibliography;  code  packaging  and  
+documentation;  final  submission
+Fu
+ll
+8.  Risk  Assessment  and  Mitigation
+Risk
+Lik
+eli
+ho
+od
+Im
+pa
+ct
+Mitigation
+Student  tag  annotation  
+contains  systematic  
+Me
+diu
+M
+ed
+GPT-4o  used  as  suggestion  generator  only  (not  final  
+authority);  researcher  reviews  every  image  directly  
+errors  due  to  unfamiliarity  
+with  the  L1–L4  ontology  
+or  annotator  fatigue  
+during  visual  review
+m iu
+m
+against  the  ontology  schema;  50-image  inter-rater  
+reliability  check  with  second  student  annotator;  
+report  Cohen's  kappa;  annotation  guidelines  
+documented  and  versioned  in  the  dissertation  
+appendix
+Personal  GPU  insufficient  
+for  LLaVA-1.5-7B  
+inference  across  10,000  
+images
+Me
+diu
+m
+M
+ed
+iu
+m
+Use  4-bit  quantisation  (GPTQ/AWQ)  for  
+development;  vLLM  for  batched  throughput;  request  
+KCL  HPC  access  for  final  evaluation  runs
+CLIP  zero-shot  precision  
+on  fine-grained  L3  GS1  
+product  categories  is  
+insufficient  (e.g.,  failing  to  
+distinguish  product  sub-
+types  within  a  GPC  Brick)
+Hi
+gh
+M
+ed
+iu
+m
+Evaluate  CLIP  zero-shot  precision  on  a  50-image  
+pilot  early  in  Phase  1;  if  precision  falls  below  60 % ,  
+train  a  lightweight  linear  probe  on  frozen  CLIP  (ViT-
+L/14)  embeddings  of  the  300–400  annotated  images  
+—  data-efficient,  requires  no  bounding-box  
+annotations,  feasible  on  a  single  GPU
+Unsupervised  clustering  
+produces  ambiguous  or  
+non-interpretable  
+scenario  groups
+Me
+diu
+m
+Hi
+gh
+Evaluate  K  range  3–8;  test  both  K-Means  and  
+DBSCA N ;  if  clustering  is  unstable,  document  as  a  
+negative  result  and  fall  back  to  3  manually  seeded  
+scenario  types  (Inventory,  Safety/Compliance,  
+Merchandising)  —  a  finding  in  itself
+May  exam  period  extends  
+and  encroaches  on  Phase  
+4  start
+Lo
+w
+M
+ed
+iu
+m
+Phase  3  intentionally  uses  exam  period  for  writing-
+only  tasks  (Chapters  1–3);  Phase  4  implementation  
+can  begin  immediately  post-exam  with  no  
+development  progress  lost
+GPT-4o  API  costs  for  
+Dynamic  Dictionary  
+orchestration  and  LLM-
+as-Judge  evaluation  
+exceed  budget
+Lo
+w
+Lo
+w
+Use  GPT-4o-mini  for  all  orchestrator  tasks;  reserve  
+full  GPT-4o  calls  for  final  evaluation  scoring  only;  
+batch  API  calls  to  minimise  token  usage;  estimated  
+total  cost  <  £ 20–30
+Small  student  evaluation  
+panel  (5–10)  produces  
+high  variance  in  RAS  
+scores
+Hi
+gh
+Lo
+w
+Supplement  RAS  with  LLM-as-Judge  actionability  
+scoring  as  a  parallel  automated  metric;  discuss  small-
+panel  limitations  explicitly  in  the  dissertation;  
+prioritise  quantitative  Retail-CHAIR  and  POPE  as  the  
+primary  hallucination  claims
+9.  Expected  Contributions
+This  project  makes  the  following  anticipated  contributions.
+Methodological:  A  novel  three-stage  data-driven  tag-constrained  captioning  pipeline,  
+introducing  Explicit  Absence  Encoding  and  unsupervised  tag-to-task  routing  as  
+structural  hallucination  mitigation  mechanisms  not  present  in  prior  image  captioning  
+literature  [ ],  [ ],  [ ],  [ ].
+Domain:  A  four-tier  retail  visual  ontology  combined  with  a  file-path-metadata-driven  
+Dynamic  Dictionary,  providing  a  practical  and  reusable  tagging  framework  for  retail  
+vision  research  that  requires  no  external  metadata  collection  infrastructure.
+Empirical:  A  comparative  ablation  study  on  a  real-world  grocery  retail  image  dataset  
+demonstrating  the  individual  and  combined  contributions  of  each  pipeline  component  to  
+hallucination  reduction  and  caption  actionability.
+Practical:  A  deployable,  compute-efficient  captioning  pipeline  (7B  VLM,  lightweight  
+detectors)  with  GDPR-compliant  anonymisation,  suitable  for  deployment  in  UK  grocery  
+retail  contexts.
+10.  Conclusion
+This  revised  preliminary  report  incorporates  five  key  practical  adjustments  relative  to  the  initial  
+proposal:  (i)  ground  truth  annotation  is  performed  via  an  LLM-assisted  semi-automated  
+workflow  with  student  review,  removing  the  dependency  on  domain  expertise;  (ii)  the  
+Automated  Dynamic  Dictionary  is  redesigned  to  leverage  the  rich  metadata  embedded  in  the  
+dataset's  file-path  structure  (campaign  type,  brand,  category,  location),  removing  any  reliance  
+on  external  data  sources;  (iii)  the  project  timeline  has  been  restructured  into  six  phases  across  
+approximately  18  weeks,  with  a  dedicated  reduced-intensity  phase  during  May  examinations  
+and  scope  calibrated  to  MSc  dissertation  standards;  (iv)  the  L1–L2  ontology  vocabulary  is  
+derived  via  a  two-pass  data-driven  induction  process  —  GPT-4o  Vision  analysis  of  a  stratified  
+100-image  corpus  sample  followed  by  alignment  with  retail  visual  merchandising  literature  (L2)  
+and  GS1  GPC  Brick  nomenclature  (L3)  —  removing  any  dependency  on  prior  retail  domain  
+knowledge  in  vocabulary  design,  with  the  L4  operational  state  attributes  derived  directly  from  
+the  project's  research  questions;  and  (v)  the  generative  VLM  is  downsized  to  a  7B-parameter  
+model  to  remain  within  personal  GPU  constraints,  with  KCL  HPC  reserved  for  final  evaluation.  
+The  core  research  contribution  —  a  data-driven  pipeline  that  structurally  constrains  VLM  
+generation  through  hierarchical  tagging,  unsupervised  scenario  routing,  and  explicit  absence  
+encoding  —  remains  intact  and  is  positioned  as  a  novel  and  empirically  grounded  approach  to  
+the  hallucination  problem  in  retail  image  captioning.
+1 2 4 5
+References
+[1]X.  Huang,  Y.  Zhang,  J.  Ma,  W.  Tian,  and  R.  Feng,  “Tag2text:  Guiding  vision-language
+model  via  image  tagging.”  [Online].  Available:  https://arxiv.org/abs/2303.05657
+[2]Z.  Gan  et  al.,  “Semantic  Compositional  N etworks  for  Visual  Captioning.”  [Online].
+Available:  https://ieeexplore.ieee.org/document/8099610/
+[3]T.  Ghandi,  H.  Pourreza,  and  H.  Mahyar,  “Deep  Learning  Approaches  on  Image
+Captioning:  A  Review,”  ACM  Computing  Surveys,  vol.  56,  no.  3,  pp.  1–39,  2023,
+[Online].  Available:  https://dl.acm.org/doi/10.1145/3617592
+[4]J.  Fei,  T.  Wang,  J.  Zhang,  Z.  He,  C.  Wang,  and  F.  Zheng,  “Transferable  Decoding
+with  Visual  Entities  for  Zero-Shot  Image  Captioning.”  [Online].  Available:
+https://ieeexplore.ieee.org/document/10378259/
+[5]Z.  Fang  et  al.,  “Injecting  Semantic  Concepts  into  End-to-End  Image  Captioning,”
+2022  IEEE/CVF  Conference  on  Computer  Vision  and  Pattern  Recognition  (CVPR),
+2022,  [Online].  Available:  https://ieeexplore.ieee.org/document/9879403/
+[6]J.-Y.  Pan,  H.-J.  Yang,  P.  Duygulu,  and  C.  Faloutsos,  “Automatic  image  captioning.”
+[Online].  Available:  https://ieeexplore.ieee.org/document/1394652/
+[7]R.  Bernardi  et  al.,  “Automatic  Description  Generation  from  Images:  A  Survey  of
+Models,  Datasets,  and  Evaluation  Measures,”  Journal  of  Artificial  Intelligence  Research,
+vol.  55,  pp.  409–442,  2016,  [Online].  Available:
+https://jair.org/index.php/jair/article/view/10985
+[8]Y.  Quanzeng,  J.  Hailin,  W.  Zhaowen,  F.  Chen,  and  L.  Jiebo,  “Image  Captioning  with
+Semantic  Attention,”  arXiv  (Cornell  University),  2022,  [Online].  Available:
+https://arxiv.org/abs/1603.03925
+[9]C.-W.  Kuo  and  Z.  Kira,  “HAAV:  Hierarchical  Aggregation  of  Augmented  Views  for
+Image  Captioning.”  [Online].  Available:
+https://ieeexplore.ieee.org/document/10205342/
+[10]L.  Qinying  et  al.,  “TagAlign:  Improving  Vision-Language  Alignment  with  Multi-Tag
+Classification,”  arXiv  (Cornell  University),  2023,  [Online].  Available:
+https://doi.org/10.48550/arxiv.2312.14149
+[11]W.  Yiyu,  L.  Hao,  X.  Jungang,  S.  Yingfei,  and  W.  Fan,  “Text  Data-Centric  Image
+Captioning  with  Interactive  Prompts,”  arXiv  (Cornell  University),  2024,  [Online].
+Available:  https://arxiv.org/abs/2403.19193
+[12]S.  Kumar  N ayan,  “A  Multimodal,  Multitask  System  for  Generating  E  Commerce  Text
+Listings  from  Images,”  arXiv  (Cornell  University),  2025,  [Online].  Available:
+https://arxiv.org/abs/2510.21835
+[13]Z.  Yipeng,  Y.  Hongju,  M.  Aritra,  X.  Canran,  Z.  Qunzhi,  and  W.  Zhe,  “Bridging
+Modality  Gaps  in  e-Commerce  Products  via  Vision-Language  Alignment,”  arXiv  (Cornell
+University),  2025,  [Online].  Available:  https://arxiv.org/abs/2508.10116
+[14]Q.  Daiqing,  Z.  Handong,  W.  Zijun,  and  L.  Sheng,  “Reminding  Multimodal  Large
+Language  Models  of  Object-aware  Knowledge  with  Retrieved  Tags,”  arXiv  (Cornell
+University),  2024,  [Online].  Available:  https://doi.org/10.48550/arxiv.2406.10839
+[15]R.  Carlos  Antonio,  M.  Anthony,  and  R.  Steven,  “Leveraging  Retrieval-Augmented
+Tags  for  Large  Vision-Language  Understanding  in  Complex  Scenes,”  arXiv  (Cornell
+University),  2024,  [Online].  Available:  https://doi.org/10.48550/arxiv.2412.11396
+[16]X.  Hu  et  al.,  “VIVO:  Visual  Vocabulary  Pre-Training  for  N ovel  Object  Captioning,”  in
+Proceedings  of  the  AAAI  Conference  on  Artificial  Intelligence,  2021,  pp.  1575–1583.
+[Online].  Available:  https://ojs.aaai.org/index.php/AAAI/article/view/16249
