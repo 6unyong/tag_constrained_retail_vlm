@@ -1,9 +1,44 @@
-pydantic>=2.0.0
-datasets>=2.16.0
-pandas>=2.0.0
-opencv-python-headless>=4.8.0
-numpy>=1.24.0
-Pillow>=10.0.0
-google-genai>=0.3.0
+# ============================================================
+#  Antigravity Pipeline - Requirements
+#  IMPORTANT: Install into venv_vision AFTER setup_vision_env.bat
+#
+#  Version pins are intentional to prevent silent breakage:
+#  - transformers is pinned at 4.47.1 in venv_vision (GroundingDINO compat)
+#    → datasets must NOT trigger an upgrade past 4.x
+#  - numpy is capped at <2.0 to stay compatible with PyTorch 2.5.1
+#  - paddlepaddle is not listed here (installed by setup_vision_env.bat separately)
+# ============================================================
+
+# ── Core Data Science ─────────
+numpy>=1.24.0,<2.0.0        # cap: PyTorch 2.5.1 breaks with numpy>=2.0
+pandas>=2.0.0,<3.0.0
+Pillow>=10.0.0,<11.0.0
+opencv-python-headless>=4.8.0,<5.0.0
+pydantic>=2.0.0,<3.0.0
+requests>=2.31.0
+
+# ── HuggingFace ──────────────
+# CRITICAL: do NOT let pip upgrade transformers beyond 4.x here.
+# GroundingDINO requires transformers==4.47.1 (installed by setup_vision_env.bat).
+# datasets is pinned to a version whose dep-resolver won't force-upgrade transformers.
+datasets>=2.16.0,<3.0.0
+
+# ── Google Gemini API ─────────
+google-genai>=0.3.0          # New unified SDK (replaces google-generativeai)
 python-dotenv>=1.0.0
 tenacity>=8.4.0
+
+# ── ML / Clustering ───────────
+scikit-learn>=1.3.0,<2.0.0
+
+# ── NLP ──────────────────────
+nltk>=3.8.0,<4.0.0
+
+# ── Local VLM (Ollama client) ─
+ollama>=0.1.0
+
+# ── PaddleOCR ────────────────
+# NOTE: paddlepaddle (the backend) is GPU-version sensitive.
+# It is installed separately in setup_vision_env.bat to match your CUDA version.
+# Only the OCR overlay is listed here.
+paddleocr>=2.7.0

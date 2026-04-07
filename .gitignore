@@ -3,6 +3,7 @@
 .venv
 venv/
 venv_setup/venv/
+venv_setup/venv_vision/
 v/
 ENV/
 
@@ -34,4 +35,10 @@ data/processed/
 data/cache/
 data/export/
 
-# Note: We will keep track of folder structure by ignoring contents but keeping the folder concept if needed.
+# Model weights (large binary files — download via venv_setup/download_weights.py)
+weights/
+
+# Internal context prompts
+context_prompt.txt
+
+# Note: data/eval_results/ IS tracked so result JSONs can be versioned.

@@ -1,0 +1,31 @@
+# ============================================================
+#  Antigravity Pipeline - Version Constraints
+#
+#  This file is used with: pip install -r requirements.txt -c constraints.txt
+#
+#  PURPOSE: Hard-lock critical packages that MUST NOT be upgraded
+#  by pip's dependency resolver, even if a transitive dependency
+#  (e.g. datasets -> transformers) requests a newer version.
+#
+#  DO NOT edit these unless you have re-validated the full
+#  pipeline with the new version.
+# ============================================================
+
+# ── CRITICAL: GroundingDINO compatibility ────────────────────
+# GroundingDINO requires BertModel.get_head_mask which was removed in 5.x.
+# This was a confirmed bug (PROJECT_CONTEXT Section 4, Bug #2).
+# Pinned to the exact version that resolved it.
+transformers==4.47.1
+
+# ── CRITICAL: PyTorch 2.5.1 compatibility ────────────────────
+# numpy 2.x introduces breaking changes in the C API that PyTorch 2.5.1
+# was compiled against. Allowing numpy>=2.0 causes silent wrong results
+# or hard crashes with no obvious traceback.
+numpy<2.0.0
+
+# ── Stability pins ─────────────────────────────────────────
+# These are not safety-critical but prevent unexpected behaviour changes
+# from major-version bumps during a long-running 10K batch job.
+pydantic<3.0.0
+scikit-learn<2.0.0
+datasets<3.0.0
