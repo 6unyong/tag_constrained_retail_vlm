@@ -96,28 +96,76 @@ LLaVA: The grocery checkout area features a neatly organized retail display with
    - 이미지 처리 후 `torch.cuda.empty_cache()` 호출로 장시간 실행 시 VRAM 점진적 누수 방지.
 6. **✅ Ollama 무한 대기 방지 (pipeline_5)**:
    - `timeout: 30` 옵션 추가 → Ollama 무응답 시 30초 후 자동 스킵.
+7. **✅ Silhouette Score 기반 자동 K 선정 (pipeline_4)**:
+   - K=2~8 전수 탐색 후 Silhouette Score 최고값의 K로 자동 클러스터링.
+   - 결과: `data/eval_results/k_selection_report.json` (논문 Table 증거).
+8. **✅ Gemini 자동 클러스터 프롬프트 생성 (pipeline_4 Phase B)**:
+   - 클러스터 센트로이드 특성을 Gemini에 전달 → K개의 MOP 프롬프트 자동 생성.
+   - 저장: `data/cache/mop_prompts.json` → pipeline_5가 동적으로 로드.
+9. **✅ 비교 평가 리포트 (pipeline_8)**:
+   - MOP vs Vanilla Baseline CHAIR_i/CHAIR_s 나란히 비교.
+   - 논문 Table/Figure로 바로 사용 가능: `data/eval_results/comparison_report.md`
+10. **✅ 라이브러리 충돌 방어 (constraints.txt)**:
+    - `transformers==4.47.1` 상한 고정 (GroundingDINO 호환성 유지).
+    - `numpy<2.0.0` 상한 고정 (PyTorch 2.5.1 호환성 유지).
 
 ## 11. Next Step - Phase 8: 10K Full Execution
-**실행 순서 (아래 명령어를 순서대로 실행):**
+
+> [!TIP]
+> **권장 실행 방법 (원클릭)**: `ollama serve`를 별도 터미널에서 켜두고 `.\run_pipeline.bat` 실행.
+> 모든 8개 스테이지가 자동으로 순서대로 실행되며, 중단 후 재실행 시 완료된 항목은 자동 skip됩니다.
+
+**하드웨어 참고 (RTX 3060 Laptop 6GB VRAM)**:
+- Stage 5 기본 VLM 모델: `llava-phi3` (3.8B, ~2.5GB VRAM) — `llava` 7B 대비 3배 빠름
+- 실행 전 `ollama pull llava-phi3` 먼저 실행 필요
+- 예상 총 소요 시간: Stage 1~4 약 8~16시간 + Stage 5 약 10~25시간 = **2~3일** (연속 실행 기준)
+
+**개별 스테이지 실행 순서:**
 ```bash
-# 1. 전체 이미지 수집 및 메타데이터 매핑 (전체 데이터셋, 이어하기 지원)
+# 0. [사전] 별도 터미널에서 Ollama 실행
+ollama serve
+
+# 1. 전체 이미지 수집 (전체 데이터셋, 이어하기 지원)
 python src/pipeline_1_ingestion.py
 
-# 2. L1(Scene) + L2(Fixture) 태깅 (이어하기 지원, 에러 자동 스킵)
+# 2. L1(Scene) + L2(Fixture) 태깅
 python src/pipeline_3_dynamic_tagging.py
 
-# 3. L3 제품 태깅 — Gemini API 호출 (이어하기 지원, 이중 과금 차단)
+# 3. L3 제품 태깅 — Gemini API (이중 과금 차단)
 python src/pipeline_3b_l3_product_tagging.py
 
-# 4. L4 속성 태깅 (이어하기 지원, VRAM 자동 정리)
+# 4. L4 속성 태깅 (VRAM 자동 정리)
 python src/pipeline_3c_l4_attribute_tagging.py
 
-# 5. MOP 라우팅 클러스터링 — L1~L4 완료 후 단독 실행 (수초 소요)
-#    K값은 데이터 규모에 맞게 조정 가능 (재실행 비용: 0)
+# 5. MOP 라우팅 + 클러스터별 프롬프트 자동 생성 (Gemini)
 python src/pipeline_4_routing_clustering.py
 
-# 6. MOP 캡셔닝 — 로컬 VLM 필요 (이어하기 지원)
+# 6. MOP 캡셔닝 (기본 모델: llava-phi3, RTX 3060 Laptop 권장)
 python src/pipeline_5_mop_captioning.py
+# 다른 모델 사용 시: python src/pipeline_5_mop_captioning.py --model llava
+
+# 7. Baseline 생성 (MOP 비교군, 순정 LLaVA 무제약 캡셔닝)
+python src/pipeline_ablation_baseline.py
+
+# 8. 평가 — CHAIR 환각 지표
+python src/pipeline_6_eval_chair.py
+
+# 9. 평가 — LLM-as-a-Judge (Gemini, 이중 과금 차단)
+python src/pipeline_7_llm_judge.py
+
+# 10. MOP vs Baseline 비교 리포트 생성
+python src/pipeline_8_comparison_report.py
 ```
 > [!TIP]
-> **오류 발생 시**: `data/cache/error_log.txt` 파일을 확인하세요. 스크립트를 재실행하면 자동으로 오류난 부분부터 이어서 처리됩니다.
+> **오류 발생 시**: `data/cache/error_log.txt` 파일을 확인하세요.
+> 스크립트를 재실행하면 자동으로 완료된 이미지부터 이어서 처리됩니다.
+
+## 12. 최종 결과물 위치
+| 파일 | 내용 | 논문 사용처 |
+|---|---|---|
+| `data/cache/final_captions.json` | MOP 최종 캡션 전체 | 정성 분석 |
+| `data/cache/baseline_captions.json` | Vanilla Baseline 캡션 | 비교용 |
+| `data/eval_results/chair_metrics.json` | CHAIR_i / CHAIR_s | Table |
+| `data/eval_results/llm_judge_scores.json` | 정확성·관련성·부재처리 | Table |
+| `data/eval_results/k_selection_report.json` | Silhouette Score K 선정 | Figure |
+| `data/eval_results/comparison_report.md` | MOP vs Baseline 나란히 비교 | Table + Qualitative |

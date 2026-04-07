@@ -14,6 +14,7 @@ Task 13 & 14: MOP Prompt Builder & LLaVA Caption Injection
 import os
 import json
 import ollama
+import argparse
 
 IN_PATH = "data/cache/clustered_routes.json"
 OUT_PATH = "data/cache/final_captions.json"
@@ -21,6 +22,13 @@ MOP_PROMPTS_PATH = "data/cache/mop_prompts.json"
 ERROR_LOG = "data/cache/error_log.txt"
 AUTOSAVE_INTERVAL = 50
 OLLAMA_TIMEOUT = 30  # seconds
+
+# Default VLM model — override via: python pipeline_5_mop_captioning.py --model llava-phi3
+# Recommended for RTX 3060 Laptop (6GB VRAM):
+#   llava-phi3       (3.8B, ~2.5GB VRAM, 3× faster than llava 7B, recommended)
+#   qwen2-vl:2b      (2B,   ~1.5GB VRAM, fastest, strong OCR)
+#   llava            (7B,   ~4.5GB VRAM, default but tight on 6GB)
+DEFAULT_MODEL = "llava-phi3"
 
 
 def load_mop_prompts() -> dict:
@@ -118,8 +126,12 @@ You are a retail merchandising assistant. Describe this image in 2 sentences usi
 Do NOT invent brand names or hallucinate products not listed above."""
 
 def run_captioning():
-    if not os.path.exists(IN_PATH):
-        raise FileNotFoundError("Missing clustered routes. Run pipeline_4 first.")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", default=DEFAULT_MODEL,
+                        help=f"Ollama VLM model name (default: {DEFAULT_MODEL})")
+    args = parser.parse_args()
+    vlm_model = args.model
+    print(f"[VLM] Using model: {vlm_model}")
 
     with open(IN_PATH, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -150,7 +162,7 @@ def run_captioning():
             print(f"[MOP Route {item.get('MOP_route_cluster')}] Prompt assembled.")
 
             response = ollama.chat(
-                model="llava",
+                model=vlm_model,
                 messages=[
                     {
                         "role": "user",
@@ -159,8 +171,9 @@ def run_captioning():
                     }
                 ],
                 options={
-                    "temperature": 0.1,  # Low temp to prevent hallucination
-                    "timeout": OLLAMA_TIMEOUT  # Prevent infinite hang
+                    "temperature": 0.1,
+                    "num_ctx": 2048,    # Limit context to reduce VRAM usage on 6GB GPU
+                    "timeout": OLLAMA_TIMEOUT
                 }
             )
 
