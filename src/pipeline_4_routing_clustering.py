@@ -10,8 +10,10 @@ Prompts can be reviewed and manually refined after inspecting the 10K
 cluster distribution. Re-running this script regenerates them automatically.
 """
 import os
+import sys
 import json
 import asyncio
+import time
 import numpy as np
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
@@ -129,20 +131,30 @@ async def generate_cluster_prompt(cluster_desc: dict) -> str:
     statistical characteristics. The prompt instructs the downstream VLM
     on how to caption images belonging to this routing group.
     """
-    prompt = f"""You are an expert in designing deterministic prompts for Vision-Language Models (VLMs)
-used in grocery retail image captioning systems.
+    prompt = f"""You are an expert in designing prompts for Vision-Language Models (VLMs)
+used in grocery retail image captioning.
 
-Based on the following cluster profile, write a SYSTEM PROMPT TEMPLATE for a caption-generating VLM.
+Based on the following cluster profile, write a SYSTEM PROMPT TEMPLATE for a retail VLM.
+
+The prompt must follow an OPEN+ANCHOR strategy:
+  - The VLM is free to describe WHAT IT SEES (visual layout, colours, seasonal themes, arrangement).
+  - It MUST incorporate specific verified product anchors (provided via {{l3_str}}).
+  - Ambiguous operational attributes (provided via {{ambiguous}}) must be explicitly withheld
+    (the VLM should state they cannot be confirmed rather than guessing).
+  - Observable confirmed operational details (provided via {{obs_str}}) may be included naturally.
+
 The prompt must:
-1. Begin with a persona declaration relevant to the retail scene type.
-2. Instruct the VLM to start its caption EXACTLY with a specific prefix phrase.
-3. Instruct the VLM to write exactly 2 sentences.
-4. Include CRITICAL RULES telling the VLM to:
-   - Only use facts from the provided FACTS block (no invention)
-   - Resolve semantic shift using Theme/Context but NOT override visual product evidence
-   - Explicitly flag Ambiguous operational data as unclear rather than guessing
-5. Include a FACTS placeholder section with these variables (use these exact Python format strings):
-   {{ctx_str}}, {{l1}}, {{l2_str}}, {{l3_str}}, {{ocr_str}}, {{stock}}, {{tidy}}, {{promo}}
+1. Begin with a retail analyst persona relevant to the scene type.
+2. Instruct the VLM to write 2-3 natural sentences.
+3. Tell the VLM to describe what it visually observes first.
+4. Include a VERIFIED ANCHORS block using the placeholder {{l3_str}} that the VLM MUST mention.
+5. Use {{ambiguous}} to list attributes the VLM must NOT guess.
+6. Include {{obs_str}} for confirmed observable operational details.
+7. Use {{ctx_str}} as background scene context only (not a product fact source).
+8. Include {{l1}} (scene type) and {{l2_str}} (fixtures) for spatial framing.
+
+IMPORTANT: Do NOT instruct the VLM to "only use the provided facts" or restrict it to tags only.
+The VLM should use its visual understanding freely, anchored by the verified facts.
 
 Cluster Profile:
 - Cluster ID: {cluster_desc['cluster_id']}
@@ -153,18 +165,34 @@ Cluster Profile:
 - Promotional scene majority: {cluster_desc['promotional_majority']}
 - Sample count: {cluster_desc['n_samples']}
 
-Return ONLY the raw prompt string. Do not wrap it in markdown or add extra explanation."""
+Return ONLY the raw prompt string. Do not wrap in markdown or add extra explanation."""
 
-    response = await client.aio.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt,
-        config=types.GenerateContentConfig(temperature=0.4),
-    )
+    # Only use gemini-2.5-flash — retry with exponential backoff on 503 overload
+    model_name = "gemini-2.5-flash"
+    max_retries = 5
 
-    if not response.text:
-        raise Exception(f"Empty Gemini response for cluster {cluster_desc['cluster_id']}")
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = await client.aio.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(temperature=0.4),
+            )
+            if not response.text:
+                raise Exception(f"Empty Gemini response for cluster {cluster_desc['cluster_id']}")
+            return response.text.strip()
+        except Exception as e:
+            err_str = str(e)
+            is_503 = "503" in err_str or "UNAVAILABLE" in err_str
+            is_last_attempt = attempt == max_retries
 
-    return response.text.strip()
+            if is_503 and not is_last_attempt:
+                wait_s = 2 ** attempt  # 2, 4, 8, 16, 32 seconds
+                print(f"  [RETRY] Cluster {cluster_desc['cluster_id']} | 503 overloaded. "
+                      f"Retrying in {wait_s}s (attempt {attempt}/{max_retries})...")
+                await asyncio.sleep(wait_s)
+            else:
+                raise  # non-503 error, or all retries exhausted — propagate
 
 
 async def generate_all_prompts(cluster_descriptions: list) -> dict:
@@ -260,7 +288,20 @@ def run_clustering():
         for cid in range(optimal_k)
     ]
 
-    mop_prompts = asyncio.run(generate_all_prompts(cluster_descriptions))
+    # Run async prompt generation and explicitly clean up the event loop
+    # to prevent aiohttp connector __del__ errors causing non-zero exit codes.
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        mop_prompts = loop.run_until_complete(generate_all_prompts(cluster_descriptions))
+    finally:
+        # Cancel any lingering tasks before closing
+        pending = asyncio.all_tasks(loop)
+        for task in pending:
+            task.cancel()
+        if pending:
+            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+        loop.close()
 
     os.makedirs("data/cache", exist_ok=True)
     with open(MOP_PROMPTS_PATH, "w", encoding="utf-8") as f:
@@ -274,3 +315,4 @@ def run_clustering():
 
 if __name__ == "__main__":
     run_clustering()
+    sys.exit(0)

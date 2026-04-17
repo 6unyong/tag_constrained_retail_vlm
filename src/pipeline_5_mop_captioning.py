@@ -13,12 +13,15 @@ Task 13 & 14: MOP Prompt Builder & LLaVA Caption Injection
 """
 import os
 import json
+import random
 import ollama
 import argparse
+from collections import Counter
 
 IN_PATH = "data/cache/clustered_routes.json"
 OUT_PATH = "data/cache/final_captions.json"
 MOP_PROMPTS_PATH = "data/cache/mop_prompts.json"
+SAMPLE_LIST_PATH = "data/cache/sample_image_list.json"  # shared with baseline
 ERROR_LOG = "data/cache/error_log.txt"
 AUTOSAVE_INTERVAL = 50
 OLLAMA_TIMEOUT = 30  # seconds
@@ -64,77 +67,200 @@ def save_cache(cache: dict):
     with open(OUT_PATH, "w", encoding="utf-8") as f:
         json.dump(list(cache.values()), f, indent=4, ensure_ascii=False)
 
-def build_mop_prompt(item: dict, mop_prompts: dict) -> str:
+# ── L4 label → natural language helpers ─────────────────────────────────────
+
+_STOCK_MAP = {
+    "well-filled":          "shelves appear well-stocked",
+    "obvious missing items": "some visible shelf gaps",
+    "completely empty":     "shelves appear empty",
+}
+_TIDY_MAP = {
+    "neatly organized":  "neatly organised",
+    "messy":             "display appears disorganised",
+    "untidy":            "display appears disorganised",
+}
+_PROMO_MAP = {
+    "promotional":    "promotional signage is visible",
+    "no promotion":   None,
+}
+
+
+def _l4_to_natural(ops: dict) -> tuple[str, list]:
     """
-    Assembles the final MOP prompt for a given image by:
-    1. Filling in the FACTS block from the item's hierarchical tags.
-    2. Injecting them into the cluster-specific template from mop_prompts.json.
-    Falls back to a minimal generic prompt if the cluster has no template.
+    Convert L4 operational_state dict to:
+      - obs_str   : observable facts expressed in natural language
+      - ambiguous : list of attribute names that are 'Ambiguous' → VLM must not guess
+    """
+    observations = []
+    ambiguous    = []
+
+    for attr, label_map, friendly_name in [
+        ("stock_level", _STOCK_MAP, "stock level"),
+        ("tidiness",    _TIDY_MAP,  "tidiness"),
+        ("promotion",   _PROMO_MAP, "promotional status"),
+    ]:
+        entry = ops.get(attr, {})
+        label = entry.get("label", "")
+        label_lc = label.lower()
+
+        if "ambiguous" in label_lc or "unclear" in label_lc or "cannot" in label_lc:
+            ambiguous.append(friendly_name)
+        else:
+            # Find first map key that appears in the label
+            mapped = None
+            for key, val in label_map.items():
+                if key in label_lc:
+                    mapped = val
+                    break
+            if mapped:  # None means "omit" (e.g. 'no promotion')
+                observations.append(mapped)
+
+    obs_str = "; ".join(observations) if observations else ""
+    return obs_str, ambiguous
+
+
+def build_mop_prompt(item: dict, mop_prompts: dict) -> str:  # noqa: C901
+    """
+    Assembles the final MOP prompt using Open+Anchor strategy:
+      - VLM is free to describe what it sees (preserves visual/seasonal context)
+      - L3 verified products are ANCHORS that must appear in the caption
+      - Ambiguous L4 attributes are EXPLICITLY flagged — VLM must not guess
+      - Raw OCR is NOT injected (L3 Gemini tagging already consumed it)
     """
     cluster = item.get("MOP_route_cluster", 0)
 
+    # ── L1 / L2 ───────────────────────────────────────────────────────────────
     l1 = item["L1_scene"]["predicted_scene"]
-    l2 = list(item["L2_fixtures"]["fixtures_detected"])
-    l2_str = ", ".join(set(l2)) if l2 else "no specific fixtures"
+    l2 = list(dict.fromkeys(item["L2_fixtures"]["fixtures_detected"]))
+    l2_str = ", ".join(l2) if l2 else "unspecified fixtures"
 
-    # Hybrid Extraction with Deduplication — no top-N cap (all factual items)
-    top_candidates = item.get("L3_products", {}).get("top_products", [])
-    l3_dedup = []
-    seen_cores = set()
-    for p in top_candidates:
-        if p.get("tag_type") == "Absence":
-            continue
-        product_str = p.get("product", "")
-        core = " ".join(product_str.split(" ")[:3]).lower()
-        if core not in seen_cores:
-            l3_dedup.append(product_str)
-            seen_cores.add(core)
-    l3_str = ", ".join(l3_dedup) if l3_dedup else "no specific products"
-
+    # ── L0 global context (background only, not a hard constraint) ────────────
     l0_ctx = item.get("global_context", [])
-    ctx_str = ", ".join(l0_ctx) if l0_ctx else "General"
+    ctx_str = ", ".join(l0_ctx) if l0_ctx else ""
 
+    # ── L3 products: only Hard/Soft-tagged, deduplicated, no Absence ──────────
+    l3_source      = item.get("l3_source", "gemini")
+    top_candidates = item.get("L3_products", {}).get("top_products", [])
+    l3_anchors = []
+    if l3_source != "empty":
+        seen_cores = set()
+        for p in top_candidates:
+            if p.get("tag_type") == "Absence":
+                continue
+            # Minimum confidence gate (Hard ≥ 0.55, Soft ≥ 0.30)
+            conf = p.get("confidence", 0)
+            tag_type = p.get("tag_type", "")
+            if tag_type == "Hard" and conf < 0.55:
+                continue
+            if tag_type == "Soft" and conf < 0.30:
+                continue
+            product_str = p.get("product", "")
+            core = " ".join(product_str.split()[:3]).lower()
+            if core and core not in seen_cores:
+                l3_anchors.append(product_str)
+                seen_cores.add(core)
+
+    # ── L4 → natural language ─────────────────────────────────────────────────
     ops = item["L4_attributes"]["operational_state"]
-    stock = ops.get("stock_level", {}).get("label", "unknown stock")
-    tidy = ops.get("tidiness", {}).get("label", "unknown tidiness")
-    promo = ops.get("promotion", {}).get("label", "unknown promotion")
+    obs_str, ambiguous = _l4_to_natural(ops)
 
-    ocr_texts = [t["text"] for t in item["L4_attributes"]["ocr_text"][:5]]
-    ocr_str = ", ".join(ocr_texts) if ocr_texts else "None"
+    # ── Compose section strings ───────────────────────────────────────────────
+    anchor_section = (
+        "Verified products / items (MUST be mentioned):\n  - "
+        + "\n  - ".join(l3_anchors)
+        if l3_anchors else
+        "No specific products could be verified from this image."
+    )
 
-    # ── Inject FACTS into the cluster-specific template ───────────────────────
-    template = mop_prompts.get(cluster)
+    ambiguous_section = (
+        "Do NOT state or guess the following — they cannot be confirmed:\n  - "
+        + "\n  - ".join(ambiguous)
+        if ambiguous else
+        ""
+    )
 
-    if template:
+    context_hint = (
+        f"Background context (for scene understanding ONLY — do not state as product fact):\n"
+        f"  {ctx_str}\n"
+        if ctx_str else ""
+    )
+
+    observation_hint = (
+        f"Observed operational details (include naturally if visible):\n  {obs_str}\n"
+        if obs_str else ""
+    )
+
+    # ── Full Open+Anchor prompt ───────────────────────────────────────────────
+    prompt = f"""You are a professional retail analyst writing concise shelf-inspection notes.
+
+Describe this retail image in 2-3 natural sentences.
+
+RULES:
+1. Describe what you actually SEE: scene type, layout, colours, arrangement, seasonal themes.
+2. You MUST mention the following VERIFIED items — they are confirmed present:
+   {anchor_section}
+3. {ambiguous_section if ambiguous_section else 'State operational details only when clearly visible.'}
+4. Do NOT invent brand names, products, or prices beyond what is verified above.
+
+{context_hint}{observation_hint}Scene type: {l1} | Fixtures: {l2_str}
+
+Write your caption now:"""
+
+    # ── Cluster template override (if pipeline_4 has generated a matching one) -
+    # NOTE: legacy closed-world templates are intentionally skipped here.
+    # Only use Gemini-generated templates that contain the keyword 'MUST' or
+    # 'anchor' to confirm they follow the Open+Anchor style.
+    template = mop_prompts.get(cluster, "")
+    if template and ("MUST" in template or "anchor" in template.lower()):
         try:
             return template.format(
                 ctx_str=ctx_str, l1=l1, l2_str=l2_str,
-                l3_str=l3_str, ocr_str=ocr_str,
-                stock=stock, tidy=tidy, promo=promo
+                l3_str="\n  - ".join(l3_anchors) if l3_anchors else "none verified",
+                obs_str=obs_str,
+                ambiguous=" | ".join(ambiguous) if ambiguous else "none",
             )
         except KeyError as e:
-            print(f"  [WARN] Template for cluster {cluster} has unexpected placeholder {e}. Using fallback.")
+            print(f"  [WARN] Cluster {cluster} template has unknown placeholder {e}. Using generic.")
 
-    # ── Generic fallback (if auto-generated template is missing/broken) ───────
-    return f"""[MOP FALLBACK - Cluster {cluster}]
-You are a retail merchandising assistant. Describe this image in 2 sentences using ONLY these facts:
-- Theme/Context: {ctx_str}
-- Area: {l1} | Equipment: {l2_str}
-- Items detected: {l3_str}
-- Visible Text: {ocr_str}
-- Operational Status: {stock}, {tidy}, {promo}
-Do NOT invent brand names or hallucinate products not listed above."""
+    return prompt
+
+def stratified_sample(data: list, n: int) -> list:
+    """Pick n images stratified across MOP clusters."""
+    clusters = Counter(item.get("MOP_route_cluster", 0) for item in data)
+    unique = sorted(clusters.keys())
+    n_clusters = len(unique)
+    base = n // n_clusters
+    remainder = n % n_clusters
+    sampled = []
+    for i, cluster in enumerate(unique):
+        quota = base + (1 if i < remainder else 0)
+        items_in_cluster = [x for x in data if x.get("MOP_route_cluster") == cluster]
+        sampled.extend(items_in_cluster[:quota])
+    return sampled[:n]
+
 
 def run_captioning():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default=DEFAULT_MODEL,
                         help=f"Ollama VLM model name (default: {DEFAULT_MODEL})")
+    parser.add_argument("--sample", type=int, default=None,
+                        help="Only process N images (stratified by cluster). Writes sample list for baseline.")
     args = parser.parse_args()
     vlm_model = args.model
     print(f"[VLM] Using model: {vlm_model}")
 
     with open(IN_PATH, "r", encoding="utf-8") as f:
         data = json.load(f)
+
+    if args.sample:
+        data = stratified_sample(data, args.sample)
+        print(f"[SAMPLE] Stratified sample: {len(data)} images across clusters.")
+        # Write shared sample list so baseline can process exact same images
+        sample_paths = [item["image_path"] for item in data]
+        os.makedirs("data/cache", exist_ok=True)
+        with open(SAMPLE_LIST_PATH, "w", encoding="utf-8") as f:
+            json.dump(sample_paths, f, indent=2)
+        print(f"[SAMPLE] Sample list written → {SAMPLE_LIST_PATH}")
 
     # Load auto-generated cluster prompts (produced by pipeline_4)
     mop_prompts = load_mop_prompts()

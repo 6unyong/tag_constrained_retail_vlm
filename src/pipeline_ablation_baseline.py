@@ -13,12 +13,14 @@ import os
 import json
 import base64
 import requests
+import argparse
 from glob import glob
 
 OUT_PATH = "data/cache/baseline_captions.json"
+SAMPLE_LIST_PATH = "data/cache/sample_image_list.json"  # written by pipeline_5 --sample
 ERROR_LOG = "data/cache/error_log.txt"
 AUTOSAVE_INTERVAL = 50
-OLLAMA_TIMEOUT = 30  # seconds
+OLLAMA_TIMEOUT = 120  # seconds — llava needs up to 60-90s for vision tasks
 
 # The vanilla baseline prompt — deliberately simple and unconstrained
 # to expose the full extent of LLaVA's unguided hallucination behaviour.
@@ -53,9 +55,22 @@ def get_base64_img(path: str) -> str:
         return base64.b64encode(f.read()).decode("utf-8")
 
 
-def generate_baseline_captions():
-    # Dynamic discovery: find all processed images regardless of quantity
-    samples = sorted(glob("data/processed/*.jpg"))
+def generate_baseline_captions(from_mop: bool = False, sample: int = None):
+    # Determine image list
+    if from_mop and os.path.exists(SAMPLE_LIST_PATH):
+        with open(SAMPLE_LIST_PATH, "r", encoding="utf-8") as f:
+            samples = json.load(f)
+        print(f"[FROM-MOP] Using {len(samples)} images from MOP sample list.")
+    elif from_mop:
+        print(f"[WARN] --from-mop set but {SAMPLE_LIST_PATH} not found. "
+              "Run pipeline_5_mop_captioning.py --sample N first.")
+        return
+    else:
+        samples = sorted(glob("data/processed/*.jpg"))
+        if sample:
+            samples = samples[:sample]
+            print(f"[SAMPLE] Using first {len(samples)} images.")
+
     if not samples:
         print("[WARN] No images found in data/processed/. Run pipeline_1 first.")
         return
@@ -95,7 +110,7 @@ def generate_baseline_captions():
             txt = res.json().get("response", "").strip()
 
         except Exception as e:
-            print(f"  [ERROR] {os.path.basename(img_path)}: {e} — skipping.")
+            print(f"  [ERROR] {os.path.basename(img_path)}: {e} - skipping.")
             log_error(img_path, e)
             txt = "GENERATION_ERROR"
 
@@ -124,4 +139,10 @@ def generate_baseline_captions():
 
 
 if __name__ == "__main__":
-    generate_baseline_captions()
+    parser = argparse.ArgumentParser(description="Ablation baseline caption generator")
+    parser.add_argument("--from-mop", action="store_true",
+                        help="Process the same images as pipeline_5 --sample (reads sample_image_list.json)")
+    parser.add_argument("--sample", type=int, default=None,
+                        help="Process first N images from data/processed/ (if not using --from-mop)")
+    args = parser.parse_args()
+    generate_baseline_captions(from_mop=args.from_mop, sample=args.sample)

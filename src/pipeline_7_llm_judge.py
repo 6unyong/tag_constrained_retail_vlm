@@ -1,25 +1,42 @@
 """
-Task 19: LLM-as-a-Judge via Gemini Pro
-Uses a powerful reasoning model to evaluate the generated captions for
-Accuracy, Relevance, and Absence Handling.
+Task 19: LLM-as-a-Judge — Multimodal Pairwise Evaluation (v2)
+==============================================================
+Evaluates MOP captions against Baseline using a PAIRWISE comparison.
+The judge receives the actual image + both captions and decides which
+is more (A) visually accurate, (B) factually complete, (C) appropriate
+in handling uncertainty.
 
-10K Resilience features:
-- Dict-based checkpoint: already-judged images are skipped on re-run
-  (prevents double Gemini billing on partial runs)
-- True async via client.aio (replaces blocking asyncio.to_thread)
-- Per-image error handling
+Design rationale (v2 changes):
+- PAIRWISE instead of absolute scoring → avoids scale bias
+- MULTIMODAL: image sent alongside captions → judge sees what VLM saw
+- NO circular Ground Truth: judge evaluates against the image, not L1-L4 tags
+- Caption order randomised per item to prevent position bias
+
+10K Resilience:
+- Dict-based checkpoint: already-judged pairs skipped on re-run
+- Per-image error handling + exponential backoff on 503
+- Auto-save after every judgment
 """
 import asyncio
+import base64
 import os
 import json
+import random
+import argparse
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 
 load_dotenv()
 
-OUT_PATH = "data/eval_results/llm_judge_scores.json"
-ERROR_LOG = "data/cache/error_log.txt"
+MOP_PATH      = "data/cache/final_captions.json"
+BASELINE_PATH = "data/cache/baseline_captions.json"
+IMG_DIR       = "data/processed"
+OUT_PATH      = "data/eval_results/llm_judge_scores.json"
+ERROR_LOG     = "data/cache/error_log.txt"
+DEFAULT_MODEL = "gemini-2.5-flash"
+
+AUTOSAVE_INTERVAL = 5
 
 
 def log_error(img_name: str, error: Exception):
@@ -37,141 +54,244 @@ def load_existing_cache() -> dict:
 
 
 def save_results(cache: dict):
-    """Compute aggregate averages and persist results."""
+    """Compute aggregate win-rates and persist results."""
     scores = list(cache.values())
-    valid = [s for s in scores if "accuracy_score" in s]
+    valid  = [s for s in scores if "preference" in s]
 
-    avg_acc = sum(s["accuracy_score"] for s in valid) / max(len(valid), 1)
-    avg_rel = sum(s["relevance_score"] for s in valid) / max(len(valid), 1)
-    avg_abs = sum(s["absence_handling_score"] for s in valid) / max(len(valid), 1)
+    mop_wins      = sum(1 for s in valid if s["preference"] == "MOP")
+    baseline_wins = sum(1 for s in valid if s["preference"] == "Baseline")
+    ties          = sum(1 for s in valid if s["preference"] == "Tie")
+    n = max(len(valid), 1)
+
+    # Per-dimension win rates
+    dim_keys = ["visual_accuracy_winner", "factual_completeness_winner",
+                "uncertainty_handling_winner"]
+    dim_mop  = {k: sum(1 for s in valid if s.get(k) == "MOP") / n for k in dim_keys}
 
     os.makedirs("data/eval_results", exist_ok=True)
     with open(OUT_PATH, "w", encoding="utf-8") as f:
         json.dump({
-            "avg_accuracy": round(avg_acc, 2),
-            "avg_relevance": round(avg_rel, 2),
-            "avg_absence_handling": round(avg_abs, 2),
+            "evaluation_type": "pairwise_multimodal",
             "n_evaluated": len(valid),
+            "overall_win_rate": {
+                "MOP_wins":      mop_wins,
+                "Baseline_wins": baseline_wins,
+                "Ties":          ties,
+                "MOP_win_pct":   round(mop_wins / n * 100, 1),
+            },
+            "dimension_win_rates": {
+                k.replace("_winner", ""): round(v * 100, 1)
+                for k, v in dim_mop.items()
+            },
             "detailed_scores": scores,
-        }, f, indent=4)
+        }, f, indent=4, ensure_ascii=False)
 
 
-async def judge_caption(client, caption: str, gt_data: dict, model_name: str) -> dict | None:
-    prompt = f"""You are an expert academic evaluator, acting as "LLM-as-a-Judge" for an image captioning paper.
-    
-We generated a caption for a retail grocery image using a constrained deterministic pipeline.
-Your job is to rate the caption from 1 to 10 on three metrics:
-
-1. ACCURACY: Does the caption strictly only describe the facts listed in the Ground Truth without hallucinating external brands or objects?
-2. RELEVANCE: Is the caption natural, coherent, and descriptively relevant for a store manager?
-3. ABSENCE_HANDLING: If any Ground Truth facts say 'Ambiguous' or 'Unknown', did the caption explicitly decline to guess and mention its uncertainty?
-
-Ground Truth Facts:
-{json.dumps(gt_data, indent=2)}
-
-Generated Caption:
-{caption}
-
-Return the results IN PURE JSON FORMAT:
-{{
-  "accuracy_score": <int 1-10>,
-  "accuracy_reason": "<string explanation>",
-  "relevance_score": <int 1-10>,
-  "relevance_reason": "<string>",
-  "absence_handling_score": <int 1-10>,
-  "absence_reason": "<string>"
-}}
-"""
-    try:
-        # True async call — avoids blocking the event loop
-        response = await client.aio.models.generate_content(
-            model=model_name,
-            contents=prompt,
-            config=types.GenerateContentConfig(temperature=0.1),
-        )
-        text = response.text or ""
-        # Strip markdown code fences if present
-        if "```json" in text:
-            text = text.split("```json\n")[1].split("```")[0]
-        elif "```" in text:
-            text = text.split("```\n")[1].split("```")[0]
-
-        return json.loads(text.strip())
-
-    except Exception as e:
-        print(f"  [ERROR] Gemini judge call failed: {e}")
+def _img_to_b64(img_path: str) -> str | None:
+    if not os.path.exists(img_path):
         return None
+    with open(img_path, "rb") as f:
+        return base64.b64encode(f.read()).decode("utf-8")
+
+
+async def pairwise_judge(
+    client, img_b64: str, caption_a: str, caption_b: str,
+    label_a: str, label_b: str, model_name: str
+) -> dict | None:
+    """
+    Ask Gemini to compare two captions given the actual image.
+    caption_a / caption_b are presented as 'Caption 1' / 'Caption 2'
+    to avoid label bias; caller tracks which is MOP vs Baseline.
+    """
+    prompt = f"""You are an expert evaluator for retail image captioning systems.
+
+You will be shown a RETAIL IMAGE and TWO CAPTIONS written about it.
+Your task is to decide which caption is BETTER on three dimensions:
+
+1. VISUAL ACCURACY — Does the caption accurately describe what is VISIBLE in the image?
+   (Penalise any invented brand names, products, or facts not supported by the image.)
+
+2. FACTUAL COMPLETENESS — Does the caption mention the KEY elements visible in the image?
+   (Scene type, main products/displays, seasonal themes if present, layout.)
+
+3. UNCERTAINTY HANDLING — When something is NOT clearly visible (stock level, price, tidiness),
+   does the caption appropriately decline to state it, rather than guessing?
+
+CAPTION 1:
+{caption_a}
+
+CAPTION 2:
+{caption_b}
+
+Return ONLY valid JSON in this exact format:
+{{
+  "preference": "<Caption 1 | Caption 2 | Tie>",
+  "visual_accuracy_winner":        "<Caption 1 | Caption 2 | Tie>",
+  "factual_completeness_winner":   "<Caption 1 | Caption 2 | Tie>",
+  "uncertainty_handling_winner":   "<Caption 1 | Caption 2 | Tie>",
+  "reasoning": "<2-3 sentence explanation of the overall preference>"
+}}"""
+
+    img_part = types.Part.from_bytes(
+        data=base64.b64decode(img_b64),
+        mime_type="image/jpeg",
+    )
+
+    max_retries = 4
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = await client.aio.models.generate_content(
+                model=model_name,
+                contents=[img_part, prompt],
+                config=types.GenerateContentConfig(temperature=0.1),
+            )
+            text = response.text or ""
+            if "```json" in text:
+                text = text.split("```json\n")[1].split("```")[0]
+            elif "```" in text:
+                text = text.split("```\n")[1].split("```")[0]
+            result = json.loads(text.strip())
+
+            # Remap "Caption 1 / Caption 2" → actual labels (MOP / Baseline)
+            def remap(val: str) -> str:
+                if "1" in val:   return label_a
+                if "2" in val:   return label_b
+                return "Tie"
+
+            return {
+                "preference":                  remap(result.get("preference", "Tie")),
+                "visual_accuracy_winner":      remap(result.get("visual_accuracy_winner", "Tie")),
+                "factual_completeness_winner": remap(result.get("factual_completeness_winner", "Tie")),
+                "uncertainty_handling_winner": remap(result.get("uncertainty_handling_winner", "Tie")),
+                "reasoning":                   result.get("reasoning", ""),
+            }
+
+        except Exception as e:
+            err_str = str(e)
+            is_503  = "503" in err_str or "UNAVAILABLE" in err_str
+            if is_503 and attempt < max_retries:
+                wait = 2 ** attempt
+                print(f"  [RETRY] 503 overload. Retrying in {wait}s ({attempt}/{max_retries})...")
+                await asyncio.sleep(wait)
+            else:
+                print(f"  [ERROR] Gemini judge call failed: {e}")
+                return None
 
 
 async def run_llm_judge():
+    parser = argparse.ArgumentParser(description="Multimodal Pairwise LLM-as-a-Judge")
+    parser.add_argument("--sample", type=int, default=None,
+                        help="Randomly sample N pairs to judge (default: all)")
+    parser.add_argument("--model", default=DEFAULT_MODEL,
+                        help=f"Gemini model name (default: {DEFAULT_MODEL})")
+    args = parser.parse_args()
+
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         print("Set GEMINI_API_KEY in .env to run LLM-as-a-Judge.")
         return
 
-    client = genai.Client()
-    model_name = "gemini-3.1-pro-preview"
+    client     = genai.Client()
+    model_name = args.model
+    print(f"[LLM JUDGE v2] Multimodal Pairwise | Model: {model_name}")
 
-    with open("data/cache/final_captions.json", "r", encoding="utf-8") as f:
-        captions_data = json.load(f)
+    # Load both caption sets
+    if not os.path.exists(MOP_PATH):
+        raise FileNotFoundError(f"MOP captions not found: {MOP_PATH}")
+    if not os.path.exists(BASELINE_PATH):
+        raise FileNotFoundError(f"Baseline captions not found: {BASELINE_PATH}")
 
-    # --- Checkpoint: skip already-judged images (prevents double Gemini billing) ---
-    cache = load_existing_cache()
+    with open(MOP_PATH,      "r", encoding="utf-8") as f: mop_data      = json.load(f)
+    with open(BASELINE_PATH, "r", encoding="utf-8") as f: baseline_data = json.load(f)
+
+    mop_map  = {i["image_file"]: i for i in mop_data      if "image_file" in i}
+    base_map = {i["image_file"]: i for i in baseline_data if "image_file" in i}
+    common   = sorted(set(mop_map) & set(base_map))
+    print(f"[PAIRS] {len(common)} image pairs found (MOP + Baseline).")
+
+    # Checkpoint
+    cache       = load_existing_cache()
     already_done = len(cache)
     if already_done > 0:
-        print(f"[CHECKPOINT] {already_done} captions already judged. Resuming...")
+        print(f"[CHECKPOINT] {already_done} pairs already judged. Resuming...")
 
-    print(f"\n--- Running Gemini Pro (LLM-as-a-Judge) Evaluation ---")
+    unjudged = [img for img in common if img not in cache]
+
+    if args.sample and args.sample > already_done:
+        remaining = args.sample - already_done
+        if remaining < len(unjudged):
+            unjudged = random.sample(unjudged, remaining)
+            print(f"[SAMPLE] Sampled {len(unjudged)} pairs "
+                  f"(target: {args.sample}, done: {already_done}).")
+
+    print(f"\n--- Pairwise Multimodal Evaluation ({len(unjudged)} pairs to judge) ---")
     new_count = 0
 
-    for item in captions_data:
-        img_name = item.get("image_file")
-        caption = item.get("FINAL_CAPTION")
+    for img_name in unjudged:
+        mop_item  = mop_map[img_name]
+        base_item = base_map[img_name]
 
-        if img_name in cache:
-            continue  # Already judged — skip Gemini call
+        mop_caption  = mop_item.get("FINAL_CAPTION", "")
+        base_caption = base_item.get("FINAL_CAPTION", "")
 
-        print(f"Judging {img_name}...")
+        img_path = os.path.join(IMG_DIR, img_name)
+        img_b64  = _img_to_b64(img_path)
 
-        gt = {
-            "L0_Context": item.get("global_context"),
-            "L1_Scene": item.get("L1_scene"),
-            "L2_Fixtures": item.get("L2_fixtures"),
-            "L3_Products": item.get("L3_products"),
-            "L4_Attributes": item.get("L4_attributes"),
-        }
+        if not img_b64:
+            print(f"  [SKIP] Image file not found: {img_path}")
+            continue
 
-        score_json = await judge_caption(client, caption, gt, model_name)
+        print(f"Judging pair: {img_name}...")
 
-        if score_json:
-            score_json["image_file"] = img_name
-            cache[img_name] = score_json
+        # Randomise caption order to prevent position bias
+        if random.random() < 0.5:
+            cap_a, cap_b = mop_caption, base_caption
+            label_a, label_b = "MOP", "Baseline"
+        else:
+            cap_a, cap_b = base_caption, mop_caption
+            label_a, label_b = "Baseline", "MOP"
+
+        result = await pairwise_judge(
+            client, img_b64, cap_a, cap_b, label_a, label_b, model_name
+        )
+
+        if result:
+            result["image_file"]    = img_name
+            result["mop_caption"]   = mop_caption
+            result["base_caption"]  = base_caption
+            cache[img_name] = result
             new_count += 1
 
-            print(
-                f"  Accuracy: {score_json.get('accuracy_score')}/10 | "
-                f"Relevance: {score_json.get('relevance_score')}/10 | "
-                f"Absence: {score_json.get('absence_handling_score')}/10"
-            )
-            print(f"  Reason (Acc): {score_json.get('accuracy_reason','')[:80]}...")
+            pref = result["preference"]
+            print(f"  Preference: {pref} | "
+                  f"VisAcc: {result['visual_accuracy_winner']} | "
+                  f"FactComp: {result['factual_completeness_winner']} | "
+                  f"UncertH: {result['uncertainty_handling_winner']}")
+            print(f"  Reasoning: {result['reasoning'][:100]}...")
 
-            # Save after every judgement (cheap operation, prevents any loss)
-            save_results(cache)
+            if new_count % AUTOSAVE_INTERVAL == 0:
+                save_results(cache)
+                print(f"  [AUTOSAVE] {new_count} new judgments saved.")
         else:
-            log_error(img_name, Exception("No score returned from judge"))
+            log_error(img_name, Exception("No result returned from judge"))
 
     # Final save + summary
     save_results(cache)
-    valid = [s for s in cache.values() if "accuracy_score" in s]
-    if valid:
-        print("\n==================================")
-        print("[REPORT] LLM-as-a-Judge Final Averages:")
-        print(f"  Accuracy:         {sum(s['accuracy_score'] for s in valid)/len(valid):.2f} / 10")
-        print(f"  Relevance:        {sum(s['relevance_score'] for s in valid)/len(valid):.2f} / 10")
-        print(f"  Absence Handling: {sum(s['absence_handling_score'] for s in valid)/len(valid):.2f} / 10")
-        print(f"  Total evaluated:  {len(valid)}")
-        print("==================================")
+    valid = [s for s in cache.values() if "preference" in s]
+    n = max(len(valid), 1)
 
+    mop_wins  = sum(1 for s in valid if s["preference"] == "MOP")
+    base_wins = sum(1 for s in valid if s["preference"] == "Baseline")
+    ties      = sum(1 for s in valid if s["preference"] == "Tie")
+
+    print("\n" + "=" * 50)
+    print("  Pairwise LLM Judge — Final Results")
+    print("=" * 50)
+    print(f"  MOP wins:      {mop_wins:>4} ({mop_wins/n*100:.1f}%)")
+    print(f"  Baseline wins: {base_wins:>4} ({base_wins/n*100:.1f}%)")
+    print(f"  Ties:          {ties:>4} ({ties/n*100:.1f}%)")
+    print(f"  Total judged:  {len(valid)}")
+    print("=" * 50)
     print(f"\nJudged this session: {new_count} | Total in cache: {len(cache)}")
     print(f"Saved to {OUT_PATH}")
 

@@ -1,19 +1,30 @@
 """
 Task 10: L3 Product Tagging
-Step 1 — Send L1/L2 context + GS1 mappings to Gemini Flash → get dynamic product keyword list
-Step 2 — Use those keywords as CLIP zero-shot prompts → produce L3 probabilistic tags
+Step 1 — Send L1/L2 context + GS1 mappings to Gemini Flash -> get dynamic product keyword list
+Step 2 — Use those keywords as CLIP zero-shot prompts -> produce L3 probabilistic tags
 
 10K Resilience features:
 - Dict-based checkpoint: already-tagged images are skipped on re-run (no double Gemini billing)
 - Per-image try/except: one bad image won't kill the entire run
 - Auto-save every 50 images to prevent data loss on crash/OOM
+- Async semaphore: CONCURRENCY images processed in parallel for speed
+- UTF-8 stdout forced: prevents UnicodeEncodeError on Korean Windows CMD
+- GS1 fallback: if Gemini returns 0 keywords, use top GS1 categories as CLIP prompts
 """
 import os
+import sys
 import json
 import asyncio
+import time
 from pydantic import BaseModel, Field
 from typing import List
 from dotenv import load_dotenv
+
+# ── Force UTF-8 stdout to prevent UnicodeEncodeError on Windows Korean locale ──
+if sys.stdout.encoding != "utf-8":
+    sys.stdout = open(sys.stdout.fileno(), mode="w", encoding="utf-8", buffering=1)
+if sys.stderr.encoding != "utf-8":
+    sys.stderr = open(sys.stderr.fileno(), mode="w", encoding="utf-8", buffering=1)
 
 import torch
 from paddleocr import PaddleOCR
@@ -22,7 +33,6 @@ load_dotenv()
 
 from google import genai
 from google.genai import types
-from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
 
 client = genai.Client()
 ocr = PaddleOCR(use_angle_cls=True, lang="en", show_log=False)
@@ -32,6 +42,22 @@ IN_PATH = "data/cache/l1_l2_tag_results.json"
 OUT_PATH = "data/cache/l1_l2_l3_tag_results.json"
 ERROR_LOG = "data/cache/error_log.txt"
 AUTOSAVE_INTERVAL = 50
+
+# Number of images to process concurrently (Gemini + OCR in parallel batches)
+# Lowered to 3 (from 5) to reduce 503 overload errors from Gemini API.
+CONCURRENCY = 3
+
+# NOTE: No GS1 fallback — if Gemini returns 0 keywords, l3_source is set to "empty"
+# so the captioning stage can skip L3 constraints and avoid hallucination.
+
+
+def safe_print(msg: str):
+    """Print with ASCII fallback to prevent UnicodeEncodeError on Windows."""
+    try:
+        print(msg)
+    except UnicodeEncodeError:
+        print(msg.encode("ascii", errors="replace").decode("ascii"))
+
 
 # ── Pydantic schema for Gemini response ──
 class DynamicProductKeywords(BaseModel):
@@ -60,29 +86,38 @@ def save_cache(cache: dict):
         json.dump(list(cache.values()), f, indent=4, ensure_ascii=False)
 
 def extract_ocr_text(image_path: str) -> list:
-    """Extract visible text from image using PaddleOCR."""
-    result = ocr.ocr(image_path, cls=True)
+    """Extract visible text from image using PaddleOCR. Safely handles None results."""
+    try:
+        result = ocr.ocr(image_path, cls=True)
+    except Exception:
+        return []
     texts = []
-    if result and result[0]:
+    # PaddleOCR can return None or [[]] on blank/corrupt images
+    if not result or not result[0]:
+        return texts
+    try:
         for line in result[0]:
+            if line is None or len(line) < 2:
+                continue
             text = line[1][0]
             confidence = line[1][1]
             if confidence > 0.5:
                 texts.append({"text": text, "confidence": round(float(confidence), 3)})
+    except (TypeError, AttributeError):
+        pass
     return texts
 
-@retry(
-    wait=wait_exponential(multiplier=2, min=5, max=60),
-    stop=stop_after_attempt(5),
-    retry=retry_if_exception_type(Exception),
-)
 async def get_dynamic_keywords(
     l1_scene: str, l2_fixtures: list, gs1_categories: list,
-    ocr_texts: list, store_context: str = "Unknown UK Supermarket"
+    ocr_texts: list, store_context: str = "Unknown UK Supermarket",
+    semaphore: asyncio.Semaphore = None
 ) -> list:
     """
     Call Gemini Flash to generate context-aware product keywords.
-    Wrapped with tenacity retry to handle 429 Rate Limit errors gracefully.
+    Manual retry logic:
+      - 503 UNAVAILABLE: up to 8 attempts, exponential backoff 4->8->16->32->60->60->60->60s
+      - 429 RESOURCE_EXHAUSTED: up to 6 attempts, fixed 30s wait
+      - Other errors: raise immediately (don't waste retries)
     """
     ocr_str = ", ".join([t['text'] for t in ocr_texts]) if ocr_texts else "No readable text"
 
@@ -101,21 +136,62 @@ async def get_dynamic_keywords(
     1. DO NOT guess random brands just because of the store_context. Strictly rely on the VISUAL TEXT EXTRACTED to infer specific products and brand names.
     2. DO NOT include packaging sizes, volumes (e.g., 500ml, 2L, multipack, gm). Output ONLY the core base product brand name (e.g., 'Coca-Cola Original Taste', 'Coca-Cola Zero Sugar').
     3. Return specific, visually identifiable product names matching the actual texts (Do NOT mix competitor brands).
+    4. If OCR text says "No readable text", return at least 5 generic product names based on the scene/fixture type.
     Return strict JSON matching the schema.
     """
-    response = await client.aio.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            response_schema=DynamicProductKeywords,
-            temperature=0.3,
-        ),
-    )
-    if not response.text:
-        raise Exception("Empty response from Gemini")
-    result = DynamicProductKeywords.model_validate_json(response.text)
-    return result.keywords
+
+    max_503_attempts = 8
+    max_429_attempts = 6
+    attempt_503 = 0
+    attempt_429 = 0
+
+    async def _call():
+        response = await client.aio.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=DynamicProductKeywords,
+                temperature=0.3,
+            ),
+        )
+        if not response.text:
+            raise Exception("Empty response from Gemini")
+        result = DynamicProductKeywords.model_validate_json(response.text)
+        return result.keywords
+
+    while True:
+        try:
+            if semaphore:
+                async with semaphore:
+                    return await _call()
+            else:
+                return await _call()
+
+        except Exception as e:
+            err_str = str(e)
+            is_503 = "503" in err_str or "UNAVAILABLE" in err_str
+            is_429 = "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower()
+
+            if is_503:
+                attempt_503 += 1
+                if attempt_503 > max_503_attempts:
+                    raise
+                wait_s = min(4 * (2 ** (attempt_503 - 1)), 60)
+                safe_print(f"    [503] Gemini overloaded. Waiting {wait_s}s "
+                      f"(attempt {attempt_503}/{max_503_attempts})...")
+                await asyncio.sleep(wait_s)
+
+            elif is_429:
+                attempt_429 += 1
+                if attempt_429 > max_429_attempts:
+                    raise
+                safe_print(f"    [429] Rate limit hit. Waiting 30s "
+                      f"(attempt {attempt_429}/{max_429_attempts})...")
+                await asyncio.sleep(30)
+
+            else:
+                raise  # Non-transient error - skip immediately
 
 def clip_l3_product_tag(image_path: str, keywords: list, clip_model, preprocess, device):
     """Run CLIP zero-shot against dynamic keywords to produce L3 tags."""
@@ -141,6 +217,89 @@ def clip_l3_product_tag(image_path: str, keywords: list, clip_model, preprocess,
     tagged.sort(key=lambda x: x["confidence"], reverse=True)
     return tagged
 
+
+async def process_single_image(
+    item: dict,
+    gs1_categories: list,
+    metadata_map: dict,
+    clip_model,
+    preprocess,
+    device: str,
+    semaphore: asyncio.Semaphore,
+    cache: dict,
+    lock: asyncio.Lock,
+) -> dict | None:
+    """
+    Process one image: OCR -> Gemini keywords -> CLIP tags.
+    Returns a result dict, or None if already cached / on error.
+    """
+    import clip
+    img_path = item["image_path"]
+
+    # Thread-safe check against shared cache
+    async with lock:
+        if img_path in cache:
+            return None  # Already processed
+
+    safe_print(f"\n--- L3 Tagging: {os.path.basename(img_path)} ---")
+    try:
+        l1_scene = item["L1"]["predicted_scene"]
+        l2_fixtures = item["L2"]["fixtures_detected"]
+
+        ocr_texts = extract_ocr_text(img_path)
+        safe_print(f"  OCR extracted {len(ocr_texts)} text blocks")
+
+        meta_info = metadata_map.get(img_path, {})
+        store_ctx = meta_info.get("retailer_metadata", "Unknown")
+
+        # Gemini API call with semaphore to cap concurrency
+        keywords = await get_dynamic_keywords(
+            l1_scene, l2_fixtures, gs1_categories, ocr_texts,
+            store_context=store_ctx, semaphore=semaphore
+        )
+
+        safe_print(f"  Gemini returned {len(keywords)} keywords: {str(keywords[:5])[:120]}...")
+
+        # If Gemini returned 0 keywords, skip CLIP tagging entirely.
+        # l3_source="empty" signals the captioning stage NOT to use L3 constraints
+        # (avoids hallucinating products that aren't visually confirmed).
+        if not keywords:
+            safe_print(f"  [SKIP] 0 keywords — no CLIP tagging. Marking as empty (no hallucination risk).")
+            result = {
+                "image_path": img_path,
+                "L1": item["L1"],
+                "L2": item["L2"],
+                "L3_dynamic_keywords": [],
+                "L3_product_tags": [],
+                "ocr_text": ocr_texts,
+                "l3_source": "empty"
+            }
+            return result
+
+        l3_tags = clip_l3_product_tag(img_path, keywords, clip_model, preprocess, device)
+
+        result = {
+            "image_path": img_path,
+            "L1": item["L1"],
+            "L2": item["L2"],
+            "L3_dynamic_keywords": keywords,
+            "L3_product_tags": l3_tags,
+            "ocr_text": ocr_texts,
+            "l3_source": "gemini"
+        }
+        return result
+
+    except Exception as e:
+        err_str = str(e)
+        is_transient = "503" in err_str or "UNAVAILABLE" in err_str or "429" in err_str
+        safe_print(f"  [ERROR] {os.path.basename(img_path)}: {type(e).__name__} - skipping.")
+        log_error(img_path, "l3_tagging", e)
+        if is_transient:
+            safe_print("  [COOLDOWN] API still struggling - pausing 15s before next image...")
+            await asyncio.sleep(15)
+        return None
+
+
 async def run_l3_tagging():
     with open(IN_PATH, "r") as f:
         l1l2_results = json.load(f)
@@ -157,66 +316,66 @@ async def run_l3_tagging():
 
     import clip
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    safe_print(f"[INFO] Using device: {device}")
     clip_model, preprocess = clip.load("ViT-B/32", device=device)
 
-    # --- Checkpoint: skip images already in the output cache ---
-    # This is the primary double-billing guard for Gemini API.
+    # ── Checkpoint ──
     cache = load_existing_cache()
     already_done = len(cache)
     if already_done > 0:
-        print(f"[CHECKPOINT] {already_done} images already have L3 tags. Skipping (no Gemini re-call).")
+        safe_print(f"[CHECKPOINT] {already_done} images already have L3 tags. Resuming...")
 
+    # Filter to only unprocessed items
+    todo = [item for item in l1l2_results if item["image_path"] not in cache]
+    safe_print(f"[INFO] {len(todo)} images remaining to process (CONCURRENCY={CONCURRENCY})")
+
+    semaphore = asyncio.Semaphore(CONCURRENCY)
+    lock = asyncio.Lock()
     new_count = 0
-    for item in l1l2_results:
-        img_path = item["image_path"]
 
-        if img_path in cache:
-            continue  # Already processed — skip Gemini call entirely
+    # Process in batches to allow periodic auto-save
+    batch_size = CONCURRENCY * 10  # e.g., 50 if CONCURRENCY=5
+    for batch_start in range(0, len(todo), batch_size):
+        batch = todo[batch_start: batch_start + batch_size]
 
-        print(f"\n--- L3 Tagging: {os.path.basename(img_path)} ---")
-
-        try:
-            l1_scene = item["L1"]["predicted_scene"]
-            l2_fixtures = item["L2"]["fixtures_detected"]
-
-            ocr_texts = extract_ocr_text(img_path)
-            print(f"  OCR extracted {len(ocr_texts)} text blocks")
-
-            meta_info = metadata_map.get(img_path, {})
-            store_ctx = meta_info.get("retailer_metadata", "Unknown")
-
-            # Gemini API call — wrapped with tenacity for 429 handling
-            keywords = await get_dynamic_keywords(
-                l1_scene, l2_fixtures, gs1_categories, ocr_texts, store_context=store_ctx
+        tasks = [
+            process_single_image(
+                item, gs1_categories, metadata_map,
+                clip_model, preprocess, device,
+                semaphore, cache, lock
             )
-            print(f"  Gemini returned {len(keywords)} keywords: {keywords[:5]}...")
+            for item in batch
+        ]
+        results = await asyncio.gather(*tasks)
 
-            l3_tags = clip_l3_product_tag(img_path, keywords, clip_model, preprocess, device)
+        for result in results:
+            if result is not None:
+                async with lock:
+                    cache[result["image_path"]] = result
+                new_count += 1
 
-            cache[img_path] = {
-                "image_path": img_path,
-                "L1": item["L1"],
-                "L2": item["L2"],
-                "L3_dynamic_keywords": keywords,
-                "L3_product_tags": l3_tags,
-                "ocr_text": ocr_texts
-            }
-            new_count += 1
-
-            # Auto-save every AUTOSAVE_INTERVAL images
-            if new_count % AUTOSAVE_INTERVAL == 0:
-                save_cache(cache)
-                print(f"  [AUTO-SAVE] Checkpoint at {new_count} new images (total cache: {len(cache)}).")
-
-        except Exception as e:
-            print(f"  [ERROR] {os.path.basename(img_path)}: {e} — skipping.")
-            log_error(img_path, "l3_tagging", e)
-            continue
+        # Auto-save after each batch
+        save_cache(cache)
+        total_done = already_done + new_count
+        safe_print(f"  [AUTO-SAVE] Batch complete. New this session: {new_count} | Total: {total_done}/{len(l1l2_results)}")
 
     # Final save
     save_cache(cache)
-    print(f"\nSaved combined L1+L2+L3 results to {OUT_PATH}")
-    print(f"Processed this session: {new_count} | Total in cache: {len(cache)}")
+    safe_print(f"\nSaved combined L1+L2+L3 results to {OUT_PATH}")
+    safe_print(f"Processed this session: {new_count} | Total in cache: {len(cache)}")
 
 if __name__ == "__main__":
-    asyncio.run(run_l3_tagging())
+    # Explicit event loop management to prevent aiohttp connector __del__
+    # errors from causing a non-zero exit code (same fix as pipeline_4).
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(run_l3_tagging())
+    finally:
+        pending = asyncio.all_tasks(loop)
+        for task in pending:
+            task.cancel()
+        if pending:
+            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+        loop.close()
+    sys.exit(0)

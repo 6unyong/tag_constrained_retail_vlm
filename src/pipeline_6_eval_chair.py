@@ -11,9 +11,14 @@ Matching Strategy (academic rigor):
   (e.g., "bottles" -> "bottle", "sandwiches" -> "sandwich").
 """
 import os
+import sys
 import json
 import re
 import nltk
+
+# Fix Windows console encoding (cp949 can't handle accented chars in GT words)
+if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf-8-sig"):
+    sys.stdout = open(sys.stdout.fileno(), mode="w", encoding="utf-8", buffering=1, closefd=False)
 from nltk.tokenize import word_tokenize
 from nltk.tag import pos_tag
 from nltk.stem import WordNetLemmatizer
