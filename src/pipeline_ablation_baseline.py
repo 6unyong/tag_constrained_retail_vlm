@@ -1,7 +1,10 @@
 """
-Ablation Baseline: Tests pure LLaVA 1.5 7B without the MOP pipeline.
-Generates vanilla captions for the same image set used by the MOP pipeline,
-enabling a fair quantitative comparison (MOP vs Baseline).
+Ablation Baseline: Generates vanilla captions for the same image set used by
+the MOP pipeline, enabling a fair quantitative comparison (MOP vs Baseline).
+
+Supports --model flag to run with any Ollama model (e.g. llava-phi3 for a
+fair same-model comparison, or llava:latest for the 7B baseline).
+Use --out to write results to a separate file without overwriting existing data.
 
 10K Resilience features:
 - Dynamic file discovery: processes all images in data/processed/ (no hardcoding)
@@ -16,11 +19,12 @@ import requests
 import argparse
 from glob import glob
 
-OUT_PATH = "data/cache/baseline_captions.json"
-SAMPLE_LIST_PATH = "data/cache/sample_image_list.json"  # written by pipeline_5 --sample
-ERROR_LOG = "data/cache/error_log.txt"
+DEFAULT_OUT_PATH  = "data/cache/baseline_captions.json"
+SAMPLE_LIST_PATH  = "data/cache/sample_image_list.json"  # written by pipeline_5 --sample
+ERROR_LOG         = "data/cache/error_log.txt"
 AUTOSAVE_INTERVAL = 50
-OLLAMA_TIMEOUT = 120  # seconds — llava needs up to 60-90s for vision tasks
+OLLAMA_TIMEOUT    = 120  # seconds — llava needs up to 60-90s for vision tasks
+DEFAULT_MODEL     = "llava:latest"  # override with --model llava-phi3 for fair comparison
 
 # The vanilla baseline prompt — deliberately simple and unconstrained
 # to expose the full extent of LLaVA's unguided hallucination behaviour.
@@ -35,18 +39,18 @@ def log_error(img_path: str, error: Exception):
         f.write(f"[ablation_baseline] {img_path} | {type(error).__name__}: {error}\n")
 
 
-def load_existing_cache() -> dict:
+def load_existing_cache(out_path: str = DEFAULT_OUT_PATH) -> dict:
     """Load previously generated baseline captions as {image_path: item} dict."""
-    if os.path.exists(OUT_PATH):
-        with open(OUT_PATH, "r", encoding="utf-8") as f:
+    if os.path.exists(out_path):
+        with open(out_path, "r", encoding="utf-8") as f:
             existing = json.load(f)
         return {item["image_path"]: item for item in existing}
     return {}
 
 
-def save_cache(cache: dict):
+def save_cache(cache: dict, out_path: str = DEFAULT_OUT_PATH):
     os.makedirs("data/cache", exist_ok=True)
-    with open(OUT_PATH, "w", encoding="utf-8") as f:
+    with open(out_path, "w", encoding="utf-8") as f:
         json.dump(list(cache.values()), f, indent=4, ensure_ascii=False)
 
 
@@ -55,7 +59,14 @@ def get_base64_img(path: str) -> str:
         return base64.b64encode(f.read()).decode("utf-8")
 
 
-def generate_baseline_captions(from_mop: bool = False, sample: int = None):
+def generate_baseline_captions(
+    from_mop: bool = False,
+    sample: int = None,
+    model: str = DEFAULT_MODEL,
+    out_path: str = DEFAULT_OUT_PATH,
+):
+    print(f"[BASELINE] Model: {model} | Output: {out_path}")
+
     # Determine image list
     if from_mop and os.path.exists(SAMPLE_LIST_PATH):
         with open(SAMPLE_LIST_PATH, "r", encoding="utf-8") as f:
@@ -78,7 +89,7 @@ def generate_baseline_captions(from_mop: bool = False, sample: int = None):
     print(f"Found {len(samples)} images for baseline captioning.")
 
     # --- Checkpoint: skip already-captioned images ---
-    cache = load_existing_cache()
+    cache = load_existing_cache(out_path)
     already_done = len(cache)
     if already_done > 0:
         print(f"[CHECKPOINT] {already_done} baseline captions already exist. Resuming...")
@@ -94,7 +105,7 @@ def generate_baseline_captions(from_mop: bool = False, sample: int = None):
             b64 = get_base64_img(img_path)
 
             payload = {
-                "model": "llava:latest",
+                "model": model,
                 "prompt": BASELINE_PROMPT,
                 "images": [b64],
                 "stream": False,
@@ -119,6 +130,7 @@ def generate_baseline_captions(from_mop: bool = False, sample: int = None):
         cache[img_path] = {
             "image_file": os.path.basename(img_path),
             "image_path": img_path,
+            "model":      model,
             "FINAL_CAPTION": txt,
             # Empty tag stubs so pipeline_6/7 CHAIR eval works on baseline too
             "L1_scene": {},
@@ -130,11 +142,11 @@ def generate_baseline_captions(from_mop: bool = False, sample: int = None):
         new_count += 1
 
         if new_count % AUTOSAVE_INTERVAL == 0:
-            save_cache(cache)
+            save_cache(cache, out_path)
             print(f"  [AUTO-SAVE] Checkpoint at {new_count} new captions (total: {len(cache)}).")
 
-    save_cache(cache)
-    print(f"\nBaseline captions saved to {OUT_PATH}")
+    save_cache(cache, out_path)
+    print(f"\nBaseline captions saved to {out_path}")
     print(f"Generated this session: {new_count} | Total in cache: {len(cache)}")
 
 
@@ -144,5 +156,16 @@ if __name__ == "__main__":
                         help="Process the same images as pipeline_5 --sample (reads sample_image_list.json)")
     parser.add_argument("--sample", type=int, default=None,
                         help="Process first N images from data/processed/ (if not using --from-mop)")
+    parser.add_argument("--model", default=DEFAULT_MODEL,
+                        help=f"Ollama model name (default: {DEFAULT_MODEL}). "
+                             "Use 'llava-phi3' for same-model fair comparison.")
+    parser.add_argument("--out", default=DEFAULT_OUT_PATH,
+                        help=f"Output JSON path (default: {DEFAULT_OUT_PATH}). "
+                             "E.g. data/cache/baseline_captions_phi3.json")
     args = parser.parse_args()
-    generate_baseline_captions(from_mop=args.from_mop, sample=args.sample)
+    generate_baseline_captions(
+        from_mop=args.from_mop,
+        sample=args.sample,
+        model=args.model,
+        out_path=args.out,
+    )

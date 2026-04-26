@@ -29,12 +29,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-MOP_PATH      = "data/cache/final_captions.json"
-BASELINE_PATH = "data/cache/baseline_captions.json"
-IMG_DIR       = "data/processed"
-OUT_PATH      = "data/eval_results/llm_judge_scores.json"
-ERROR_LOG     = "data/cache/error_log.txt"
-DEFAULT_MODEL = "gemini-2.5-flash"
+MOP_PATH          = "data/cache/final_captions.json"
+DEFAULT_BASELINE  = "data/cache/baseline_captions.json"
+IMG_DIR           = "data/processed"
+DEFAULT_OUT_PATH  = "data/eval_results/llm_judge_scores.json"
+ERROR_LOG         = "data/cache/error_log.txt"
+DEFAULT_MODEL     = "gemini-2.5-flash"
 
 AUTOSAVE_INTERVAL = 5
 
@@ -44,16 +44,16 @@ def log_error(img_name: str, error: Exception):
         f.write(f"[pipeline_7] {img_name} | {type(error).__name__}: {error}\n")
 
 
-def load_existing_cache() -> dict:
+def load_existing_cache(out_path: str = DEFAULT_OUT_PATH) -> dict:
     """Load previously judged results as {image_file: result} dict."""
-    if os.path.exists(OUT_PATH):
-        with open(OUT_PATH, "r", encoding="utf-8") as f:
+    if os.path.exists(out_path):
+        with open(out_path, "r", encoding="utf-8") as f:
             existing = json.load(f)
         return {r["image_file"]: r for r in existing.get("detailed_scores", [])}
     return {}
 
 
-def save_results(cache: dict):
+def save_results(cache: dict, out_path: str = DEFAULT_OUT_PATH):
     """Compute aggregate win-rates and persist results."""
     scores = list(cache.values())
     valid  = [s for s in scores if "preference" in s]
@@ -69,7 +69,7 @@ def save_results(cache: dict):
     dim_mop  = {k: sum(1 for s in valid if s.get(k) == "MOP") / n for k in dim_keys}
 
     os.makedirs("data/eval_results", exist_ok=True)
-    with open(OUT_PATH, "w", encoding="utf-8") as f:
+    with open(out_path, "w", encoding="utf-8") as f:
         json.dump({
             "evaluation_type": "pairwise_multimodal",
             "n_evaluated": len(valid),
@@ -184,7 +184,16 @@ async def run_llm_judge():
                         help="Randomly sample N pairs to judge (default: all)")
     parser.add_argument("--model", default=DEFAULT_MODEL,
                         help=f"Gemini model name (default: {DEFAULT_MODEL})")
+    parser.add_argument("--baseline-path", default=DEFAULT_BASELINE,
+                        help=f"Baseline captions JSON path (default: {DEFAULT_BASELINE}). "
+                             "E.g. data/cache/baseline_captions_phi3.json for same-model comparison.")
+    parser.add_argument("--out", default=DEFAULT_OUT_PATH,
+                        help=f"Output JSON path (default: {DEFAULT_OUT_PATH}). "
+                             "E.g. data/eval_results/llm_judge_scores_phi3.json")
     args = parser.parse_args()
+
+    baseline_path = args.baseline_path
+    out_path      = args.out
 
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
@@ -194,15 +203,16 @@ async def run_llm_judge():
     client     = genai.Client()
     model_name = args.model
     print(f"[LLM JUDGE v2] Multimodal Pairwise | Model: {model_name}")
+    print(f"[PATHS] Baseline: {baseline_path} | Output: {out_path}")
 
     # Load both caption sets
     if not os.path.exists(MOP_PATH):
         raise FileNotFoundError(f"MOP captions not found: {MOP_PATH}")
-    if not os.path.exists(BASELINE_PATH):
-        raise FileNotFoundError(f"Baseline captions not found: {BASELINE_PATH}")
+    if not os.path.exists(baseline_path):
+        raise FileNotFoundError(f"Baseline captions not found: {baseline_path}")
 
-    with open(MOP_PATH,      "r", encoding="utf-8") as f: mop_data      = json.load(f)
-    with open(BASELINE_PATH, "r", encoding="utf-8") as f: baseline_data = json.load(f)
+    with open(MOP_PATH,       "r", encoding="utf-8") as f: mop_data      = json.load(f)
+    with open(baseline_path,  "r", encoding="utf-8") as f: baseline_data = json.load(f)
 
     mop_map  = {i["image_file"]: i for i in mop_data      if "image_file" in i}
     base_map = {i["image_file"]: i for i in baseline_data if "image_file" in i}
@@ -210,7 +220,7 @@ async def run_llm_judge():
     print(f"[PAIRS] {len(common)} image pairs found (MOP + Baseline).")
 
     # Checkpoint
-    cache       = load_existing_cache()
+    cache        = load_existing_cache(out_path)
     already_done = len(cache)
     if already_done > 0:
         print(f"[CHECKPOINT] {already_done} pairs already judged. Resuming...")
@@ -270,13 +280,13 @@ async def run_llm_judge():
             print(f"  Reasoning: {result['reasoning'][:100]}...")
 
             if new_count % AUTOSAVE_INTERVAL == 0:
-                save_results(cache)
+                save_results(cache, out_path)
                 print(f"  [AUTOSAVE] {new_count} new judgments saved.")
         else:
             log_error(img_name, Exception("No result returned from judge"))
 
     # Final save + summary
-    save_results(cache)
+    save_results(cache, out_path)
     valid = [s for s in cache.values() if "preference" in s]
     n = max(len(valid), 1)
 
@@ -285,7 +295,7 @@ async def run_llm_judge():
     ties      = sum(1 for s in valid if s["preference"] == "Tie")
 
     print("\n" + "=" * 50)
-    print("  Pairwise LLM Judge — Final Results")
+    print("  Pairwise LLM Judge -- Final Results")
     print("=" * 50)
     print(f"  MOP wins:      {mop_wins:>4} ({mop_wins/n*100:.1f}%)")
     print(f"  Baseline wins: {base_wins:>4} ({base_wins/n*100:.1f}%)")
@@ -293,7 +303,7 @@ async def run_llm_judge():
     print(f"  Total judged:  {len(valid)}")
     print("=" * 50)
     print(f"\nJudged this session: {new_count} | Total in cache: {len(cache)}")
-    print(f"Saved to {OUT_PATH}")
+    print(f"Saved to {out_path}")
 
 
 if __name__ == "__main__":

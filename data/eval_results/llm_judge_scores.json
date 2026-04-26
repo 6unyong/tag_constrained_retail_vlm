@@ -1,0 +1,287 @@
+{
+    "evaluation_type": "pairwise_multimodal",
+    "n_evaluated": 27,
+    "overall_win_rate": {
+        "MOP_wins": 11,
+        "Baseline_wins": 15,
+        "Ties": 1,
+        "MOP_win_pct": 40.7
+    },
+    "dimension_win_rates": {
+        "visual_accuracy": 33.3,
+        "factual_completeness": 48.1,
+        "uncertainty_handling": 18.5
+    },
+    "detailed_scores": [
+        {
+            "preference": "Baseline",
+            "visual_accuracy_winner": "Baseline",
+            "factual_completeness_winner": "Baseline",
+            "uncertainty_handling_winner": "Baseline",
+            "reasoning": "Caption 1 is significantly more visually accurate, correctly identifying various decorations like skeletons, spider webs, and trees. Caption 2 contains major hallucinations, incorrectly stating there are 'bags of candy' and a 'Halloween Edition Newspaper' which are not present in the image. Caption 1 also provides a more complete overview of the display's contents.",
+            "image_file": "sample_10019.jpg",
+            "mop_caption": "The image shows a Halloween-themed endcap display in a store. The display features various items such as black and orange pumpkins, skull decorations, and a sign that reads \"Happy Halloween\". There are also several bags of candy on the shelves behind the display. One of the verified products present is the Halloween Edition Newspaper. The overall layout of the display seems to be arranged in a way that draws attention to the Halloween-themed items, with the sign and decorations placed prominently at the front.",
+            "base_caption": "The image depicts a well-stocked Halloween display in a grocery store. There are various themed decorations such as skeletons, spider webs, trees, and other items commonly associated with Halloween. The display is organized on shelves with clear signage that reads \"Halloween\" at the top of each section. Below this, there is a wide selection of themed merchandise including jack-o'-lanterns, skeletal figures, and other decorative items. The store appears to be in good condition, with the Halloween display prominently featured as a focal point."
+        },
+        {
+            "preference": "MOP",
+            "visual_accuracy_winner": "MOP",
+            "factual_completeness_winner": "MOP",
+            "uncertainty_handling_winner": "Tie",
+            "reasoning": "Caption 2 is more visually accurate, correctly identifying the store type as a 'retail store' and describing the specific 'black and white display bin' with ghost graphics. Caption 1 incorrectly mentions 'KitKat' as a visible brand and less accurately describes the display as a 'grocery store shelf'. Caption 2 also provides more specific details about the signs and display placement.",
+            "image_file": "sample_10082.jpg",
+            "mop_caption": "The image shows a retail store with a Halloween-themed promotion. The main focus is on a black and white display bin filled with various candy bags, including M&Ms. The bin has a purple sign that reads \"TREAT SEASON\" and another sign that says \"Boo!\". This bin is placed at the end of an aisle in front of other shelves stocked with different products. The background reveals more Halloween-themed items, indicating that this promotion is likely for the holiday season.",
+            "base_caption": "The image shows a grocery store shelf stocked with Halloween-themed candy and treats, including bags from major brands like M&M's and KitKat. There is an ad sign with a festive message, indicating that it is in the lead up to Halloween. The shelf appears to be well-stocked, with various sizes of chocolate and candy bars displayed, ready for customers to purchase. The overall operational condition of the store seems to be satisfactory."
+        },
+        {
+            "preference": "MOP",
+            "visual_accuracy_winner": "MOP",
+            "factual_completeness_winner": "MOP",
+            "uncertainty_handling_winner": "Tie",
+            "reasoning": "Caption 2 provides a much more detailed and visually accurate description of the display, focusing on the orange and black packaging, the organization, and specific Halloween imagery. While both captions misidentify the Crayola paint kits (Caption 1 as 'candies', Caption 2 as 'boxes of candy'), Caption 2's overall completeness and descriptive richness make it superior. Caption 1 is too generic and misses key visual details.",
+            "image_file": "sample_10018.jpg",
+            "mop_caption": "A retail image showcasing a Halloween-themed promotion. The display is set up in an aisle, with shelves arranged to catch the eye of passing customers. The main focus of the display is on orange and black packaging, which are predominantly rectangular in shape. These packages feature various images related to Halloween, including jack-o-lanterns, ghosts, and bats. \n\nThe arrangement of the products suggests a variety of options for customers to choose from. The display is well-organized, with each product clearly visible and easily accessible. Despite the variety, there's no sign of clutter or disarray on the shelves.\n\nIn addition to the Halloween-themed packaging, there are also a few other items scattered throughout the display. These include boxes of candy and decorations in black and white colors, adding a contrasting touch to the overall orange and black theme.\n\nThe background is relatively simple, with a beige wall providing a neutral backdrop that allows the Halloween-themed products to stand out. A sign reading \"Halloween for less\" is prominently displayed, reinforcing the promotion's message of affordability.\n\nOverall, this image captures a well-executed retail promotion designed to attract customers with its variety and affordable pricing during the Halloween season.",
+            "base_caption": "The image captures a Halloween section within a grocery store. It is stocked with various Halloween-themed items like costumes, decorations, candies, and other seasonal merchandise. There are several packaged items on display, organized on shelves that are part of the store's fixtures. A \"Halloween for less\" sign is visible, which indicates a promotional offer or sale. The overall condition of the store appears to be operational with various products ready for purchase."
+        },
+        {
+            "preference": "Baseline",
+            "visual_accuracy_winner": "Baseline",
+            "factual_completeness_winner": "Baseline",
+            "uncertainty_handling_winner": "Tie",
+            "reasoning": "Caption 1 contains significant factual inaccuracies, such as inventing the brand name 'BOOSIGN' (the actual brand is 'Hyde and Eek! Boutique') and providing incorrect counts of the boxes. Caption 2, while less specific, is generally accurate in its descriptions and avoids making such critical errors, making it the better caption.",
+            "image_file": "sample_10015.jpg",
+            "mop_caption": "A retail image showcasing a Halloween-themed promotion. The main focus is on orange and black boxes with the brand name \"BOOSIGN\" prominently displayed. There are six of these boxes in total, arranged neatly on two shelves. Each box features an illustration of a spooky scene, adding to the Halloween theme. In addition to the BOOSIGN boxes, there are also four other orange and black boxes with different designs, making up a total of ten boxes displayed. The arrangement of these boxes is orderly, creating a visually appealing display for customers.",
+            "base_caption": "The image shows a shelf in a store stocked with various items such as toys, gift bags, and decorations. There are several boxes on the shelves with visible branding and designs. Behind the shelf, there is a display of more items like Halloween-themed decorations, suggesting that it might be a seasonal sale or celebration. The overall condition of the store appears to be well-maintained and organized, indicating an ongoing operational business."
+        },
+        {
+            "preference": "Baseline",
+            "visual_accuracy_winner": "Baseline",
+            "factual_completeness_winner": "Baseline",
+            "uncertainty_handling_winner": "MOP",
+            "reasoning": "Caption 1 is highly inaccurate, incorrectly identifying the scene as a checkout area, stating shelves are disorganized, and claiming no specific products are visible. Caption 2, while making a significant error about the absence of staff, is much more accurate and complete in describing the store as well-stocked with various products and neatly arranged shelves. Caption 1 wins on uncertainty handling as it doesn't guess about unclear details, whereas Caption 2 makes an explicit guess about the time of day based on a false premise.",
+            "image_file": "sample_1008.jpg",
+            "mop_caption": "\nThe image shows a grocery checkout area with a refrigerator and a shelf. The shelf is disorganized and has some seasonal themes. There are no specific products that can be verified from the image. Some visible operational details include gaps in the display and a woman standing behind the counter.",
+            "base_caption": "The image shows a well-stocked grocery store with various products displayed on shelves, including baked goods, snacks, and beverages. The shelves are neatly arranged, suggesting that the store is organized and regularly maintained. There are no visible customers or staff at this moment in time, indicating that it could be either early morning or late evening when fewer people visit the store. The presence of a refrigerator with drinks on top suggests that the store offers a range of products to cater to different customer needs. Overall, the operational condition of the grocery retail seems satisfactory and well-maintained."
+        },
+        {
+            "preference": "MOP",
+            "visual_accuracy_winner": "MOP",
+            "factual_completeness_winner": "MOP",
+            "uncertainty_handling_winner": "MOP",
+            "reasoning": "Caption 1 is more visually accurate, correctly identifying the main product as a 'favorite day' haunted cookie kit and its Halloween theme. Caption 2 invents a brand name ('Frightfully Good Day') and a 'protective glass or barrier' that is not present in the image. While Caption 1 incorrectly identifies the green bag as M&M's, its overall description is much closer to reality.",
+            "image_file": "sample_10042.jpg",
+            "mop_caption": "A retail image showcasing a Halloween themed promotion for a \"favorite day\" haunted cookie kit. The kit is displayed in a yellow and black signboard with various images of cookies such as ghosts, witches, pumpkins, and candy corn. A green bag of M&M's can be seen next to the display box. The promotion seems to be aimed at attracting customers during the Halloween season.",
+            "base_caption": "The image shows a display in a store with Halloween-themed treats, including decorated cookies, candy, and what appears to be a bag of chips. There is a sign advertising \"Frightfully Good Day\" in front of the display. The products are arranged neatly on shelves behind a protective glass or barrier, suggesting an organized retail environment."
+        },
+        {
+            "preference": "Baseline",
+            "visual_accuracy_winner": "Baseline",
+            "factual_completeness_winner": "Tie",
+            "uncertainty_handling_winner": "Baseline",
+            "reasoning": "Caption 2 is preferred because it more accurately describes the visible products as cereals, cookies, and cakes, and correctly notes the shelves are well-stocked and neat. Caption 1 makes a significant factual error by identifying a 'Favorite Day Filled Sandwich' which is not present, and incorrectly states the display is 'disorganized'. While Caption 2 misses the explicit seasonal theme, its overall description is more visually accurate.",
+            "image_file": "sample_10060.jpg",
+            "mop_caption": "The image shows a retail store with a Halloween theme. The shelves are filled with various products including the \"Favorite Day Filled Sandwich\" which is prominently displayed in orange packaging. There are also other items such as candy and snacks that are arranged on the shelves. The display appears to be disorganized, but there is promotional signage visible indicating a sale or special offer.",
+            "base_caption": "The image depicts a well-stocked grocery store aisle filled with various snack foods such as cereals, cookies, and cakes. On one side of the aisle, there is a selection of packaged treats arranged neatly on shelves, while the other side features an assortment of fresh baked goods displayed in a refrigerated case. The lighting appears to be ample, providing good visibility for customers to read labels and make selections. The overall operational condition of the store suggests it's clean, organized, and ready for business."
+        },
+        {
+            "preference": "MOP",
+            "visual_accuracy_winner": "MOP",
+            "factual_completeness_winner": "MOP",
+            "uncertainty_handling_winner": "MOP",
+            "reasoning": "Caption 1 is much more visually accurate and factually complete, correctly identifying the specific product (Snickers fun size), its container, and the Halloween theme. Caption 2 is overly generic, fails to mention key details, and inaccurately claims that pricing information and a variety of items are visible.",
+            "image_file": "sample_10055.jpg",
+            "mop_caption": "A promotion for Snickers pieces is displayed in a clear plastic container with a brown lid. The container is placed on a white shelf and has a Halloween-themed label on it. There are several other containers of the same product visible behind it, indicating that this display is at the end of an aisle. The display appears disorganized, but there is promotional signage visible in the background.",
+            "base_caption": "The image displays a grocery store shelf stocked with a variety of items. The shelves are well-organized and tidy, with visible product labels, brand names, and pricing information. The presence of Snickers candy bars and other snacks suggests that the store offers a selection of confectionery and snack products for customers. Overall, the retail image appears to be in good operational condition, suggesting that the store is well-maintained and cared for by staff."
+        },
+        {
+            "preference": "MOP",
+            "visual_accuracy_winner": "Tie",
+            "factual_completeness_winner": "MOP",
+            "uncertainty_handling_winner": "Baseline",
+            "reasoning": "Both captions contain significant inaccuracies, particularly inventing 'bags of chips' and misidentifying the types of candy. However, Caption 2 provides a more specific and accurate description of the main display's structure (endcap, orange and black boxes, shelves), making it slightly more factually complete. Caption 1 uses 'likely' for some details, which is good for uncertainty handling, but its overall description is more generic.",
+            "image_file": "sample_10064.jpg",
+            "mop_caption": "The image shows a Halloween-themed endcap display in a store. The display features orange and black boxes arranged on three white shelves. Each box is labeled with the name of a different candy bar. In addition to the candy bars, there are also bags of chips and other snacks available for purchase. Above the display, a sign advertises Starbucks Coffee. The overall layout of the display suggests that it is designed to catch the eye of customers passing by in the store.",
+            "base_caption": "The image depicts a grocery store with various Halloween-themed items prominently displayed. There's a Starbucks coffee stand with cups available for purchase. A rack of candy, likely filled with chocolate bars, is visible along with a collection of beverages. In the background, there's a shelf stocked with bags of chips and snacks. Overall, the store appears to be well-stocked and ready for customers to shop."
+        },
+        {
+            "preference": "Baseline",
+            "visual_accuracy_winner": "Baseline",
+            "factual_completeness_winner": "MOP",
+            "uncertainty_handling_winner": "Baseline",
+            "reasoning": "Caption 1 is preferred because its inaccuracies are less severe. While it misidentifies some items as 'toothbrushes' and exaggerates the disarray, it doesn't invent a completely wrong product category like 'fruit juice' for the slime-like items, which Caption 2 does. Caption 2 is more complete in mentioning elements like the packaging and Halloween theme, but its major factual error regarding the product type and brand name makes it less accurate overall.",
+            "image_file": "sample_10092.jpg",
+            "mop_caption": "A metal rack filled with various items for sale. The most prominent item is YDE fruit juice which is in clear plastic bags and has orange labels on them. There are also other items such as pink and green bottles, black and white boxes, and a few Halloween-themed items.",
+            "base_caption": "The image shows a cluttered display in a retail store, likely a convenience or supermarket setting, with various merchandise items such as cups, toothbrushes, and possibly other miscellaneous items, arranged somewhat haphazardly on shelves and in baskets. The merchandise appears to be in a state of disarray, and there is no visible signage indicating the name or location of the store. The overall operational condition of the retail space seems disorganized and in need of tidying up or reorganization."
+        },
+        {
+            "preference": "Baseline",
+            "visual_accuracy_winner": "Baseline",
+            "factual_completeness_winner": "Baseline",
+            "uncertainty_handling_winner": "Baseline",
+            "reasoning": "Caption 1 accurately describes the visible items and the scene without inventing details. Caption 2 contains significant factual inaccuracies, describing items that are not present in the image, such as 'green and yellow cups adorned with ghosts' and 'orange and purple candles shaped like bats'.",
+            "image_file": "sample_10021.jpg",
+            "mop_caption": "A retail image showcasing a Halloween-themed endcap display. The display features various items, including black and white mugs with pumpkin designs, green and yellow cups adorned with ghosts, and orange and purple candles shaped like bats. The arrangement of the items is neatly organized on the shelves, creating an eye-catching presentation for customers. Promotional signage can be seen in the background, indicating a special offer or sale at this particular endcap display.",
+            "base_caption": "The image shows a section of a grocery store that appears to be set up for Halloween merchandise. There are various items on display, including coffee cups with cartoon characters, mugs, and seasonal decorations such as pumpkins and other festive objects. The shelves are filled with these items, indicating the store's readiness for the upcoming holiday. There are no visible customers in this section of the store, suggesting it is either early in the day or not a busy time. The overall operational condition seems to be well-maintained and organized, showcasing an attractive display for potential shoppers."
+        },
+        {
+            "preference": "Baseline",
+            "visual_accuracy_winner": "Baseline",
+            "factual_completeness_winner": "Baseline",
+            "uncertainty_handling_winner": "Baseline",
+            "reasoning": "Caption 2 is significantly more visually accurate, correctly identifying the scene as a grocery store produce section and avoiding invented details. Caption 1 incorrectly mentions 'bananas', 'Super Food Magazine', and a 'Fresh Market' sign, none of which are visible in the image.",
+            "image_file": "sample_10.jpg",
+            "mop_caption": "The image shows a well-stocked supermarket aisle with a variety of products. The shelves are filled with items such as apples, oranges, and bananas in different colors like red, green, and yellow. There is also a display box containing Super Food Magazine on the bottom shelf. A woman is seen walking down the aisle, possibly looking for something to buy. The background has a sign that reads \"Fresh Market\" indicating the section of the store.",
+            "base_caption": "The image shows a well-stocked grocery store shelf filled with various fresh produce items, including fruits like apples and oranges, vegetables, and possibly some prepared meals or snacks. The shelves are organized, and the lighting in the store is bright, suggesting it's open for business. There are visible price tags on the products, indicating that this is a commercial establishment where goods are sold. The overall operational condition of the store seems to be good, as indicated by the neat arrangement of the items and the cleanliness of the environment."
+        },
+        {
+            "preference": "MOP",
+            "visual_accuracy_winner": "MOP",
+            "factual_completeness_winner": "MOP",
+            "uncertainty_handling_winner": "Tie",
+            "reasoning": "Caption 1 is preferred because, despite several inaccuracies regarding product details (e.g., calling the hand-shaped bags 'ghost-shaped chips' and misidentifying storage bags as chips), it attempts to describe the actual items visible in the image. Caption 2, on the other hand, largely hallucinates products like beer and a 'Limited Edition' sign that are not present at all, making it almost entirely inaccurate.",
+            "image_file": "sample_10073.jpg",
+            "mop_caption": "A Halloween themed promotion is displayed on the end cap of this aisle. The main product being promoted is a green ghost-shaped bag of chips from \"B&W\". The packaging for these chips features an orange and black color scheme, with text in both English and Spanish. There are several other bags of chips on the shelf behind this promotion, including some by popular brands like \"Lays\" and \"Ruffle Ruffles\". The display bin is filled with a variety of snacks, all arranged neatly for easy browsing.",
+            "base_caption": "In this grocery retail image, there's a prominent display of beer in the foreground with a price tag clearly visible. The beer is organized on shelves next to orange pegboards. There is a sign indicating that an item is 'Limited Edition'. Additionally, on the top shelf, there are two packages of craft beer. The overall operational condition of the store seems to be normal, with no apparent issues visible in this image."
+        },
+        {
+            "preference": "Baseline",
+            "visual_accuracy_winner": "Baseline",
+            "factual_completeness_winner": "Baseline",
+            "uncertainty_handling_winner": "Baseline",
+            "reasoning": "Caption 2 is significantly better as it accurately describes the Halloween theme and the presence of skeleton decorations and other merchandise. Caption 1 contains multiple severe visual inaccuracies, including misidentifying the figures as 'alien-like' and 'sitting', and most critically, hallucinating an 'Ale!o Orange Soda' sign that is not present in the image.",
+            "image_file": "sample_10012.jpg",
+            "mop_caption": "\nThe image showcases a promotional endcap in a store with two orange alien-like figures sitting on it. The figures are holding hands and have green eyes. There is also an \"Ale!o Orange Soda\" sign above them, indicating that the soda is part of this promotion. The background has a Halloween theme, which suggests that these items may be seasonal.",
+            "base_caption": "The image depicts a Halloween-themed grocery store display with two skeleton decorations standing upright next to various Halloween merchandise such as costumes and accessories. The display includes price tags, indicating that these items are for sale. The overall appearance of the shelf suggests it is stocked and ready for customers to purchase items."
+        },
+        {
+            "preference": "MOP",
+            "visual_accuracy_winner": "Baseline",
+            "factual_completeness_winner": "MOP",
+            "uncertainty_handling_winner": "Baseline",
+            "reasoning": "Caption 1 is preferred for its superior factual completeness, accurately identifying the Hershey's brand, the Halloween theme, and the purple and orange colors of the display. However, it suffers from significant visual inaccuracies by inventing details like 'candy corn,' 'pumpkin decoration,' and a '2 for $5' sign. Caption 2 is more visually accurate by not inventing details, but it makes a clear misobservation about the absence of customers and is very generic, missing key information about the product and seasonal theme.",
+            "image_file": "sample_10080.jpg",
+            "mop_caption": "The image shows a retail store with a promotional endcap displaying Hershey's products. The endcap is filled with stacks of Hershey's chocolate bars and bags in various colors, including purple and orange. There are also seasonal items such as Halloween-themed candy corn and a pumpkin decoration. The display box has a sign that reads \"2 for $5\", indicating the promotion is currently active. The endcap is located at the end of an aisle, surrounded by other shelves stocked with various products.",
+            "base_caption": "This is an image of a grocery store's aisle. The aisle appears to be well-stocked with various products, including a notable arrangement of candy boxes at the end of the aisle. A price sign is visible above the candy display, indicating that it is for sale. The overall operational condition of the store seems good, with shelves stocked and clean, although there are no customers in the scene, which may suggest either early morning or late night shopping hours."
+        },
+        {
+            "preference": "Tie",
+            "visual_accuracy_winner": "Baseline",
+            "factual_completeness_winner": "MOP",
+            "uncertainty_handling_winner": "MOP",
+            "reasoning": "Caption 1 incorrectly identifies the display as an 'end cap,' which is a significant visual inaccuracy. However, it provides a more complete and generally accurate description of the diverse items present, including both seasonal and miscellaneous products. Caption 2 correctly identifies the store type and seasonal theme but inaccurately claims the presence of 'costumes' and misses prominent baking supplies, making it less factually complete. Both captions make some unsupported guesses, but Caption 1's guesses are slightly more plausible than Caption 2's outright incorrect statement about 'costumes'.",
+            "image_file": "sample_10084.jpg",
+            "mop_caption": "A retail store's end cap display is filled with various items, including some that are seasonal. The display features Halloween-themed products and other miscellaneous items such as boxes of cereal and a pink toy. The shelves are neatly organized and the colors of the items vary, creating an eye-catching display for customers.",
+            "base_caption": "The grocery store appears to be well-stocked with a variety of items. There are shelves filled with numerous Halloween-themed products, such as candies, costumes, decorations, and toys. The aisles are neatly arranged with clear signage indicating the types of products available. The store looks organized and ready for customers to shop."
+        },
+        {
+            "preference": "MOP",
+            "visual_accuracy_winner": "MOP",
+            "factual_completeness_winner": "MOP",
+            "uncertainty_handling_winner": "Baseline",
+            "reasoning": "Caption 2 is preferred because it correctly identifies the brand 'Favorite Day' and the Halloween theme, which are key elements. Caption 1 invents a product name ('Fantastical Houses') which is a significant factual inaccuracy. While Caption 2 has minor errors (price by 5 cents, 'disorganized' description, and mixing 'Mansion' with 'Village' from the price tag), these are less severe than Caption 1's fabrication.",
+            "image_file": "sample_10039.jpg",
+            "mop_caption": "A retail image showcasing a Halloween themed promotion for the \"Favorite Day Haunted Village Cookie House Kit\". The kit is displayed on an orange and black cardboard box with a picture of a haunted house on it. The price of the kit is $14.95. The display appears disorganized, with other products visible in the background.",
+            "base_caption": "The image shows a store shelf displaying two boxes of Halloween-themed treats, each featuring a cartoonish house with candy or confections visible through the windows. The upper box has a label that reads \"Fantastical Houses\" in an ornate script, suggesting it is a specialty product rather than a generic candy item. The lower box contains a different treat and has the word \"haunted\" above an illustration of a house with bats around it, emphasizing its spooky Halloween theme. The shelf appears to be well-stocked and clean, indicating that the store is operating in good condition with a variety of holiday-related merchandise available for customers."
+        },
+        {
+            "preference": "MOP",
+            "visual_accuracy_winner": "MOP",
+            "factual_completeness_winner": "MOP",
+            "uncertainty_handling_winner": "Baseline",
+            "reasoning": "Caption 2 is preferred because it correctly identifies the Halloween theme and the 'favorite day' brand, which are key elements visible in the image. While Caption 2 incorrectly identifies the product as candy bars and invents specific brands and a promotion, Caption 1 completely misidentifies the product as wrapping paper and misses the theme and brand entirely, making its visual accuracy and factual completeness much worse.",
+            "image_file": "sample_10071.jpg",
+            "mop_caption": "A Halloween themed retail promotion featuring three stacks of candy bars. The top two are Snickers and the bottom one is Milky Way. Each bar has a black and white label with an orange circle on it. The labels say \"favorite day\" and \"best sellers\". There is also a sign that says \"buy 2 get 1 free\".",
+            "base_caption": "The image shows a section of a grocery store with a focus on glittery wrapping paper products. On display are three rolls of multi-colored glitter paper and a container of black confetti. Behind these items, there is a shelf stocked with additional merchandise. The overall condition of the store appears well-maintained, with clear signage and organized product placement."
+        },
+        {
+            "preference": "MOP",
+            "visual_accuracy_winner": "MOP",
+            "factual_completeness_winner": "MOP",
+            "uncertainty_handling_winner": "MOP",
+            "reasoning": "Caption 1 is more visually accurate, despite incorrectly stating the display is 'disorganized' and mentioning 'two skulls' when only one is prominent. Caption 2 invents several details, such as an 'inflatable skeleton holding a skull' and a 'rack of skeletons in various poses and costumes,' which are not visible. Caption 1 also handles uncertainty better by not fabricating details about the products.",
+            "image_file": "sample_10007.jpg",
+            "mop_caption": "A Halloween themed end cap with two skulls and a skeleton on display. The skulls are white, while the skeleton is made of bones. The display appears disorganized, but there is promotional signage visible in the background. The fixtures for the display are unspecified.",
+            "base_caption": "The image shows a grocery store display with Halloween-themed items. Atop the display, there is an inflatable skeleton holding a skull. Below, there's a rack of skeletons in various poses and costumes. The store itself appears clean and well-organized, with no visible clutter or damage. The overall operational condition suggests that it is currently open for business and actively stocking holiday items."
+        },
+        {
+            "preference": "Baseline",
+            "visual_accuracy_winner": "Baseline",
+            "factual_completeness_winner": "Baseline",
+            "uncertainty_handling_winner": "Baseline",
+            "reasoning": "Caption 1 is superior because it accurately describes the products and the overall organization of the display. Caption 2 contains a significant hallucination about an 'Ice Cream' sign and incorrectly states that the display appears disorganized, which is not supported by the image.",
+            "image_file": "sample_10086.jpg",
+            "mop_caption": "The image shows a Halloween themed end cap display in a store. The display is filled with various items, including bags and boxes arranged on multiple shelves. A sign that reads \"Ice Cream\" can be seen among the items. The background of the image reveals other products on the shelves, indicating that this is part of a larger retail space. The overall arrangement appears disorganized, with items placed haphazardly across the display.",
+            "base_caption": "The image shows a well-stocked grocery store shelf filled with various snack foods, including bags of candy, chips, and cookies. There is a Halloween theme on display as indicated by the spooky decorations and themed snacks. In the background, there's an orange shelving unit with items such as crackers and tortilla shells placed in an orderly fashion. The store appears to be open and functional, indicating that it is fully operational."
+        },
+        {
+            "preference": "Baseline",
+            "visual_accuracy_winner": "Baseline",
+            "factual_completeness_winner": "Baseline",
+            "uncertainty_handling_winner": "Baseline",
+            "reasoning": "Caption 1 contains significant visual inaccuracies, inventing products like 'chips, boxes of cereal, and packs of cookies' which are not present, and incorrectly stating 'no visible signs of promotional activity' when price tags and 'Save $2' are visible. Caption 2 is more accurate, correctly identifying many candy brands, though it incorrectly mentions 'Doritos'. Caption 2 also provides more specific details about the products.",
+            "image_file": "sample_10078.jpg",
+            "mop_caption": "The image shows a Halloween themed end cap display in a store. The display is filled with various candy and snacks arranged on multiple shelves. Some of the items include bags of chips, boxes of cereal, and packs of cookies. The colors of the products vary, but there are many orange and black items that fit the Halloween theme. The arrangement of the products is neat and organized, with each item placed in its designated spot on the shelf. There are no visible signs of promotional activity or special deals being offered at this time.",
+            "base_caption": "The image shows a vibrant and well-stocked grocery store shelf filled with various Halloween-themed candy products. Prominently displayed are large bags of sweets, including classic names like Hershey's and Mars, along with a variety of other treats, such as Snickers, KitKat, and Doritos. The products are organized in an attractive manner, making it easy for customers to browse and make selections. The overall operational condition of the store appears to be clean and well-maintained."
+        },
+        {
+            "preference": "Baseline",
+            "visual_accuracy_winner": "Baseline",
+            "factual_completeness_winner": "Baseline",
+            "uncertainty_handling_winner": "Baseline",
+            "reasoning": "Caption 2 is more visually accurate as Caption 1 incorrectly mentions 'black licorice twists and white chocolate covered treats' which are not clearly visible. Caption 2 also provides a more complete and accurate overview of the scene, describing it as a well-stocked grocery store with Halloween candy. Caption 2 handles uncertainty better by using phrases like 'appears to be open' and 'likely popular items'.",
+            "image_file": "sample_10076.jpg",
+            "mop_caption": "A store's end cap is filled with candy bags in various colors and flavors. The arrangement includes orange, purple, green, and yellow bags. There are also black licorice twists and white chocolate covered treats. The display has a Halloween theme, which suggests that the products may be seasonal.",
+            "base_caption": "The grocery store in the image appears to be open and well-stocked with a variety of Halloween candy products displayed on shelves. There are numerous colorful packages featuring images of candy in front of the candy section, indicating that it is a festive season when sweets and treats are likely popular items."
+        },
+        {
+            "preference": "Baseline",
+            "visual_accuracy_winner": "Baseline",
+            "factual_completeness_winner": "Baseline",
+            "uncertainty_handling_winner": "Baseline",
+            "reasoning": "Caption 1 is more visually accurate and complete. Caption 2 makes a significant factual error by describing the display as an 'end cap' and stating it's at the end of an aisle, which is incorrect based on the image. Caption 1 accurately describes the display as a 'cardboard rack' within a store setting.",
+            "image_file": "sample_10057.jpg",
+            "mop_caption": "A Halloween themed Snickers promotion is displayed on a black and orange end cap. The Snickers bags are arranged in a row, with the brand name clearly visible. The end cap is placed at the end of an aisle, surrounded by other promotional signage.",
+            "base_caption": "The image shows a candy display at a grocery store with Halloween-themed Snickers bars prominently featured on a cardboard rack. There is a clear sign indicating that these are Halloween-themed treats. The overall operational condition of the store appears to be open for business, with shelves stocked and products arranged neatly."
+        },
+        {
+            "preference": "MOP",
+            "visual_accuracy_winner": "MOP",
+            "factual_completeness_winner": "MOP",
+            "uncertainty_handling_winner": "Baseline",
+            "reasoning": "Caption 1 is preferred because it correctly identifies the brand 'Favorite Day' and, despite misidentifying the specific gummy shape as 'worms' instead of 'fingers', it correctly places the product within the 'gummy' category. Caption 2 makes a more significant error by calling the product 'jelly beans', which is a different type of candy. While Caption 1's description of packaging colors is inaccurate, its overall factual completeness is better due to the brand mention.",
+            "image_file": "sample_10044.jpg",
+            "mop_caption": "A Halloween themed promotion for \"Favorite Day\" featuring gummy worms in a green monster's mouth. The packaging is black and white with the product inside being yellow, orange, and red. There are other products visible on the shelf behind it.",
+            "base_caption": "This image shows a display at a retail store with a focus on candy and a Halloween theme. There is a package of jelly beans with a witch's face on it, and several other packages of candies can be seen in the background. The lighting appears to be artificial, with a neutral color tone. The overall operational condition of the display suggests that it is well-maintained with an eye for thematic merchandising."
+        },
+        {
+            "preference": "Baseline",
+            "visual_accuracy_winner": "Baseline",
+            "factual_completeness_winner": "Baseline",
+            "uncertainty_handling_winner": "Baseline",
+            "reasoning": "Caption 1 contains numerous factual inaccuracies, including incorrect product counts, descriptions, and prices. Caption 2, while less specific, provides a generally accurate overview of the scene and correctly identifies the Halloween theme and display type. Caption 2 also handles uncertainty better by using cautious language.",
+            "image_file": "sample_10072.jpg",
+            "mop_caption": "The image shows a retail store with a Halloween theme. The focus of the image is on four boxes of \"Favorite Day Black Cookie Icing\" that are arranged in two rows of two. Each box has an orange and black label, and one of them also features a pumpkin design. The price for each box is $3.89. In addition to these, there is another product on the shelf called \"Favorite Day Cookie Icing\" which is priced at $4.95 per 16 oz. jar.",
+            "base_caption": "The image shows a display shelf with Halloween-themed candy packages organized in trays, likely in a store aisle. It seems to be well-stocked with various candy options, with labels clearly visible indicating different types of candies. There are also price tags and some signs on top of the display. The overall operational condition appears to be standard for a retail setting."
+        },
+        {
+            "preference": "Baseline",
+            "visual_accuracy_winner": "Baseline",
+            "factual_completeness_winner": "Baseline",
+            "uncertainty_handling_winner": "Tie",
+            "reasoning": "Caption 1 is preferred because it provides a more accurate general description of the scene and its theme, despite some inaccuracies like mentioning 'baked goods' and a non-existent 'open hours sign'. Caption 2 contains numerous specific factual errors, including incorrect counts of items, misidentification of objects (e.g., 'birdhouse' and 'vase'), and fabricating text on a sign, making it less visually accurate and complete.",
+            "image_file": "sample_10023.jpg",
+            "mop_caption": "\nThe image shows a Halloween-themed display in a grocery store. The display features several baskets and jars filled with candy, arranged on two white shelves against a red background. The top shelf has three baskets of candy, while the bottom shelf has four baskets and six jars of candy. In addition to the Halloween-themed items, there are also some non-Halloween items on display, such as a birdhouse and a vase. The background features a red wall with a sign that reads \"Taste\".",
+            "base_caption": "The image shows an interior view of a well-stocked grocery store with various items on display such as baked goods, candies, and decorations. There is a prominent Halloween theme with many seasonal items like pumpkin cups and orange decorative elements. The store appears to be operational and ready for customers, indicated by the open hours sign visible at the top of the image."
+        },
+        {
+            "preference": "Baseline",
+            "visual_accuracy_winner": "Baseline",
+            "factual_completeness_winner": "Baseline",
+            "uncertainty_handling_winner": "Baseline",
+            "reasoning": "Caption 1 is significantly better as Caption 2 contains multiple severe visual inaccuracies, such as claiming 'several boxes of cereal' are visible and stating 'no text or other information visible in the image,' both of which are demonstrably false. While Caption 1 incorrectly identifies some prices as 'clearance,' its overall description of the products and scene is much more accurate and complete.",
+            "image_file": "sample_10089.jpg",
+            "mop_caption": "The image shows a retail store with an orange and white theme. The shelves are filled with various products, including some that appear to be related to Halloween. There are also several boxes of cereal visible on the shelves. The background has a pinkish-orange color scheme, which adds to the overall festive atmosphere of the store. The shelves have gaps between them, and there is no text or other information visible in the image.",
+            "base_caption": "The image shows a well-stocked grocery store shelf displaying a variety of items such as party supplies, plastic cups, and decorative items, with clearance pricing visible for some items, indicating a sales event or discounts available. The shelves are organized with products arranged in rows, and there is an assortment of party favors and party decorations that are on display. There's a clearance price sign indicating that some items might be marked at lower prices, suggesting they might be discontinued or older stock. The store appears to be operational, but the arrangement of products suggests it could potentially be in the process of reorganizing or preparing for an upcoming event."
+        }
+    ]
+}

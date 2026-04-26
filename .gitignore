@@ -42,3 +42,9 @@ weights/
 context_prompt.txt
 
 # Note: data/eval_results/ IS tracked so result JSONs can be versioned.
+
+# Large generated HTML reports (too big for GitHub)
+data/eval_results/comparison_report.html
+data/eval_results/l3_quality_check.html
+l3_quality_check.html
+
