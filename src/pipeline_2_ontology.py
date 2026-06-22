@@ -22,7 +22,7 @@ async def process_image_for_induction(image_path: str) -> dict:
     Focus on:
     1. The general scene/zone (e.g. ambient aisle, chiller, checkout).
     2. The physical fixtures present (e.g. gondola shelving, cardboard dump bin, promotional endcap).
-    3. The product categories visible (broad GS1 GPC level, like 'carbonated beverages', 'cookies').
+    3. The product categories visible (broad Kanops parent level, like 'Soft Drinks and Mixers', 'Biscuits').
     4. Any operational states or issues (e.g. fully stocked, out of stock gap, messy, active promotion).
     Return strict JSON matching the schema.
     """

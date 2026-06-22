@@ -15,36 +15,71 @@ METADATA_URI = "hf://datasets/dresserman/kanops-open-retail-imagery/metadata.csv
 OUTPUT_DIR = "data/processed"
 BLUR_THRESHOLD = 50.0  # Adjustable Laplacian variance threshold
 META_OUT_PATH = "data/cache/metadata_mapped.json"
+FFT_CACHE_PATH = "data/cache/fft_threshold.json"
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs("data/cache", exist_ok=True)
 
-def is_blurry(image: Image.Image, threshold: float = BLUR_THRESHOLD) -> Tuple[bool, float]:
-    """Check if an image is blurry using the variance of the Laplacian."""
+def get_fft_magnitude(image: Image.Image) -> float:
+    """Calculate the high-frequency magnitude of an image using FFT."""
     open_cv_image = np.array(image.convert("RGB"))
     gray = cv2.cvtColor(open_cv_image, cv2.COLOR_RGB2GRAY)
-    variance = cv2.Laplacian(gray, cv2.CV_64F).var()
-    return variance < threshold, variance
+    
+    f = np.fft.fft2(gray)
+    fshift = np.fft.fftshift(f)
+    
+    rows, cols = gray.shape
+    crow, ccol = rows // 2, cols // 2
+    r = 30  # radius for high pass filter
+    fshift[crow - r:crow + r, ccol - r:ccol + r] = 0
+    
+    f_ishift = np.fft.ifftshift(fshift)
+    img_back = np.fft.ifft2(f_ishift)
+    img_back = np.abs(img_back)
+    
+    return float(np.mean(img_back))
+
+def compute_dynamic_threshold(ds_stream, num_samples=100) -> float:
+    print(f"Scanning first {num_samples} images to calculate dynamic FFT threshold...")
+    magnitudes = []
+    for i, item in enumerate(ds_stream):
+        if i >= num_samples:
+            break
+        mag = get_fft_magnitude(item["image"])
+        magnitudes.append(mag)
+        if (i + 1) % 20 == 0:
+            print(f"  Scanned {i+1}/{num_samples} images...")
+            
+    if not magnitudes:
+        return 10.0 # fallback
+        
+    optimal_threshold = float(np.percentile(magnitudes, 10))
+    print(f"Dynamic FFT Threshold calculated (10th percentile): {optimal_threshold:.2f}")
+    return optimal_threshold
+
+def is_blurry(image: Image.Image, fft_threshold: float, lap_threshold: float = BLUR_THRESHOLD) -> Tuple[bool, float, float]:
+    """Check if an image is blurry using a hybrid Laplacian and FFT filter."""
+    open_cv_image = np.array(image.convert("RGB"))
+    gray = cv2.cvtColor(open_cv_image, cv2.COLOR_RGB2GRAY)
+    
+    lap_variance = cv2.Laplacian(gray, cv2.CV_64F).var()
+    fft_magnitude = get_fft_magnitude(image)
+    
+    is_blur = (lap_variance < lap_threshold) or (fft_magnitude < fft_threshold)
+    
+    return is_blur, lap_variance, fft_magnitude
 
 def load_existing_metadata() -> dict:
-    """Load previously saved metadata to enable session resumption."""
     if os.path.exists(META_OUT_PATH):
         with open(META_OUT_PATH, "r", encoding="utf-8") as f:
             return json.load(f)
     return {}
 
 def save_metadata(metadata_map: dict):
-    """Persist current metadata map to disk."""
     with open(META_OUT_PATH, "w", encoding="utf-8") as f:
         json.dump(metadata_map, f, indent=4)
 
 def ingest_data(limit: int = 0):
-    """
-    Ingest images from the HuggingFace dataset stream.
-    
-    Args:
-        limit: Max number of images to process. 0 = no limit (full dataset).
-    """
     print(f"Loading Hugging Face Dataset from dresserman/kanops-open-retail-imagery (Streaming)...")
     try:
         ds = load_dataset("dresserman/kanops-open-retail-imagery", split="train", streaming=True)
@@ -52,6 +87,18 @@ def ingest_data(limit: int = 0):
     except Exception as e:
         print(f"Error loading dataset: {e}")
         return
+
+    # Dynamic FFT Thresholding
+    if os.path.exists(FFT_CACHE_PATH):
+        with open(FFT_CACHE_PATH, "r") as f:
+            fft_threshold = json.load(f)["threshold"]
+        print(f"Loaded cached optimal FFT threshold: {fft_threshold:.2f}")
+    else:
+        fft_threshold = compute_dynamic_threshold(ds, num_samples=100)
+        with open(FFT_CACHE_PATH, "w") as f:
+            json.dump({"threshold": fft_threshold}, f)
+        # Re-initialize stream because we consumed the first 100
+        ds = load_dataset("dresserman/kanops-open-retail-imagery", split="train", streaming=True)
 
     print(f"\nLoading Metadata CSV from {METADATA_URI}...")
     try:
@@ -61,7 +108,6 @@ def ingest_data(limit: int = 0):
         print(f"Error loading metadata: {e}")
         return
 
-    # --- Checkpoint: Load previously processed metadata ---
     metadata_map = load_existing_metadata()
     already_done = len(metadata_map)
     if already_done > 0:
@@ -75,15 +121,12 @@ def ingest_data(limit: int = 0):
     for i, item in enumerate(stream):
         img = item["image"]
 
-        # Build the expected save path to check if already done
         save_path = os.path.join(OUTPUT_DIR, f"sample_{i}.jpg")
-        # Normalise path separators for cross-platform key matching
         save_path_norm = save_path.replace("\\", "/")
 
         if save_path in metadata_map or save_path_norm in metadata_map:
-            continue  # Already processed - skip without re-saving
+            continue
 
-        # --- Per-image try/except: one bad image won't kill the whole run ---
         try:
             if i >= len(meta):
                 print(f"  [WARN] Image {i}: No metadata row available, skipping.")
@@ -91,7 +134,7 @@ def ingest_data(limit: int = 0):
 
             row = meta.iloc[i]
 
-            blurry, score = is_blurry(img)
+            blurry, lap_score, fft_score = is_blurry(img, fft_threshold)
             status = "REJECTED (Blurry)" if blurry else "ACCEPTED (Sharp)"
 
             retailer = row.get("retailer", np.nan)
@@ -125,15 +168,15 @@ def ingest_data(limit: int = 0):
                 "image_id": int(row["image_id"]) if "image_id" in row else i,
                 "retailer_metadata": actual_retailer,
                 "global_context": global_context,
-                "blur_score": round(score, 2),
+                "blur_score": round(lap_score, 2),
+                "fft_score": round(fft_score, 2),
                 "status": status
             }
 
             ctx_str = f" | Context: {global_context}" if global_context else ""
-            print(f"Image {i}: Laplacian = {score:.2f} [{status}] | Retailer: {actual_retailer}{ctx_str}")
+            print(f"Image {i}: Laplacian={lap_score:.1f}, FFT={fft_score:.1f} [{status}] | {actual_retailer}{ctx_str}")
             processed_count += 1
 
-            # Auto-save every 50 images to prevent data loss on crash
             if processed_count % 50 == 0:
                 save_metadata(metadata_map)
                 print(f"  [AUTO-SAVE] Checkpoint saved at {processed_count} new images.")
@@ -142,7 +185,6 @@ def ingest_data(limit: int = 0):
             print(f"  [ERROR] Image {i} ({save_path}): {e} — skipping.")
             continue
 
-    # Final save
     save_metadata(metadata_map)
     print(f"\nSaved metadata mapping to {META_OUT_PATH}")
     print(f"Total processed this session: {processed_count} | Total in cache: {len(metadata_map)}")

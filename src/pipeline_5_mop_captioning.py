@@ -191,9 +191,7 @@ def build_mop_prompt(item: dict, mop_prompts: dict) -> str:  # noqa: C901
     )
 
     # ── Full Open+Anchor prompt ───────────────────────────────────────────────
-    prompt = f"""You are a professional retail analyst writing concise shelf-inspection notes.
-
-Describe this retail image in 2-3 natural sentences.
+    prompt = f"""Describe this retail image in 2-3 natural sentences objectively.
 
 RULES:
 1. Describe what you actually SEE: scene type, layout, colours, arrangement, seasonal themes.

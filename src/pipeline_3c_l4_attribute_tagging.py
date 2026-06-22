@@ -21,6 +21,10 @@ OUT_PATH = "data/cache/hierarchical_tags_final.json"
 ERROR_LOG = "data/cache/error_log.txt"
 AUTOSAVE_INTERVAL = 50
 
+# --- Configuration ---
+# You can experiment with different thresholds by setting the ABSENCE_THRESHOLD environment variable.
+ABSENCE_THRESHOLD = float(os.environ.get("ABSENCE_THRESHOLD", 0.60))
+
 # ── L4 Attribute labels for CLIP zero-shot (Conservative Tuning) ──
 ATTRIBUTE_LABELS = {
     "stock_level": [
@@ -70,7 +74,7 @@ def classify_attributes(image_path: str, clip_model, preprocess, device) -> dict
             max_prob = probs[max_idx]
 
             # Explicit Absence Encoding
-            if max_prob < 0.70:
+            if max_prob < ABSENCE_THRESHOLD:
                 final_label = "Ambiguous (Cannot be clearly determined from this image)"
             else:
                 final_label = labels[max_idx].replace("A photo of a ", "").replace("A photo of an ", "")

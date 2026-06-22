@@ -1,5 +1,5 @@
 """
-Task 17: Retail-CHAIR Hallucination Metric Evaluator
+Task 17: L-CHAIR Hallucination Metric Evaluator
 Extracts nouns from the generated VLM caption and compares them
 against the Ground Truth Object List (L1 + L2 + L3 + OCR) to calculate
 CHAIR_i (instance-level) and CHAIR_s (sentence-level) hallucination rates.
@@ -125,7 +125,7 @@ def run_chair_evaluation():
     hallucinated_sentences = 0
     total_sentences = len(data)
 
-    print(f"Running Retail-CHAIR Evaluation on {len(data)} captions...")
+    print(f"Running L-CHAIR Evaluation on {len(data)} captions...")
     eval_results = []
 
     for item in data:
@@ -179,8 +179,8 @@ def run_chair_evaluation():
     chair_s = round(hallucinated_sentences / max(total_sentences, 1) * 100, 2)
 
     print("\n==================================")
-    print(f"Retail-CHAIR_i (Instance Object Hallucination): {chair_i}%")
-    print(f"Retail-CHAIR_s (Sentence Hallucination):        {chair_s}%")
+    print(f"L-CHAIR_i (Instance Object Hallucination): {chair_i}%")
+    print(f"L-CHAIR_s (Sentence Hallucination):        {chair_s}%")
     print("==================================")
 
     os.makedirs("data/eval_results", exist_ok=True)

@@ -1,6 +1,6 @@
 """
 Task 10: L3 Product Tagging
-Step 1 — Send L1/L2 context + GS1 mappings to Gemini Flash -> get dynamic product keyword list
+Step 1 — Send L1/L2 context + Kanops mappings to Gemini Flash -> get dynamic product keyword list
 Step 2 — Use those keywords as CLIP zero-shot prompts -> produce L3 probabilistic tags
 
 10K Resilience features:
@@ -9,7 +9,7 @@ Step 2 — Use those keywords as CLIP zero-shot prompts -> produce L3 probabilis
 - Auto-save every 50 images to prevent data loss on crash/OOM
 - Async semaphore: CONCURRENCY images processed in parallel for speed
 - UTF-8 stdout forced: prevents UnicodeEncodeError on Korean Windows CMD
-- GS1 fallback: if Gemini returns 0 keywords, use top GS1 categories as CLIP prompts
+- Kanops fallback: if Gemini returns 0 keywords, use top GS1 categories as CLIP prompts
 """
 import os
 import sys
@@ -47,7 +47,7 @@ AUTOSAVE_INTERVAL = 50
 # Lowered to 3 (from 5) to reduce 503 overload errors from Gemini API.
 CONCURRENCY = 3
 
-# NOTE: No GS1 fallback — if Gemini returns 0 keywords, l3_source is set to "empty"
+# NOTE: No Kanops fallback — if Gemini returns 0 keywords, l3_source is set to "empty"
 # so the captioning stage can skip L3 constraints and avoid hallucination.
 
 
@@ -108,7 +108,7 @@ def extract_ocr_text(image_path: str) -> list:
     return texts
 
 async def get_dynamic_keywords(
-    l1_scene: str, l2_fixtures: list, gs1_categories: list,
+    l1_scene: str, l2_fixtures: list, kanops_categories: list,
     ocr_texts: list, store_context: str = "Unknown UK Supermarket",
     semaphore: asyncio.Semaphore = None
 ) -> list:
@@ -128,7 +128,7 @@ async def get_dynamic_keywords(
 
     Scene zone: {l1_scene}
     Fixtures present: {', '.join(l2_fixtures)}
-    Known product categories (GS1 GPC): {', '.join(gs1_categories)}
+    Known product categories (Kanops): {', '.join(kanops_categories)}
     
     VISUAL TEXT EXTRACTED FROM IMAGE (OCR): {ocr_str}
 
@@ -220,7 +220,7 @@ def clip_l3_product_tag(image_path: str, keywords: list, clip_model, preprocess,
 
 async def process_single_image(
     item: dict,
-    gs1_categories: list,
+    kanops_categories: list,
     metadata_map: dict,
     clip_model,
     preprocess,
@@ -254,7 +254,7 @@ async def process_single_image(
 
         # Gemini API call with semaphore to cap concurrency
         keywords = await get_dynamic_keywords(
-            l1_scene, l2_fixtures, gs1_categories, ocr_texts,
+            l1_scene, l2_fixtures, kanops_categories, ocr_texts,
             store_context=store_ctx, semaphore=semaphore
         )
 
@@ -303,8 +303,8 @@ async def process_single_image(
 async def run_l3_tagging():
     with open(IN_PATH, "r") as f:
         l1l2_results = json.load(f)
-    with open("data/cache/gs1_mappings.json", "r") as f:
-        gs1_data = json.load(f)
+    with open("data/cache/kanops_mappings.json", "r") as f:
+        kanops_data = json.load(f)
 
     try:
         with open("data/cache/metadata_mapped.json", "r") as f:
@@ -312,7 +312,7 @@ async def run_l3_tagging():
     except FileNotFoundError:
         metadata_map = {}
 
-    gs1_categories = [m["gs1_brick"] for m in gs1_data["mappings"]]
+    kanops_categories = [m["kanops_subcategory"] for m in kanops_data["mappings"]]
 
     import clip
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -340,7 +340,7 @@ async def run_l3_tagging():
 
         tasks = [
             process_single_image(
-                item, gs1_categories, metadata_map,
+                item, kanops_categories, metadata_map,
                 clip_model, preprocess, device,
                 semaphore, cache, lock
             )

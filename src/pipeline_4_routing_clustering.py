@@ -1,22 +1,21 @@
 """
 Task 12: MOP Routing Clustering + Automatic Cluster Prompt Generation
 
-Phase A — K-Means clustering with Silhouette Score-based K selection.
+Phase A — K-Medoids clustering with Gower's Distance and Silhouette Score-based K selection.
 Phase B — Gemini analyzes each cluster's centroid features and generates
           a bespoke MOP prompt template per cluster, saved to
           data/cache/mop_prompts.json for downstream use by pipeline_5.
-
-Prompts can be reviewed and manually refined after inspecting the 10K
-cluster distribution. Re-running this script regenerates them automatically.
 """
 import os
 import sys
 import json
 import asyncio
 import time
+import random
 import numpy as np
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
+import pandas as pd
+import gower
+from pyclustering.cluster.kmedoids import kmedoids
 from sklearn.metrics import silhouette_score
 from dotenv import load_dotenv
 
@@ -37,12 +36,7 @@ SCENE_LABELS = [
     "standalone promotional display bin",
 ]
 
-
 def extract_features(item: dict) -> list:
-    """
-    Extract 5 numerical features per image for clustering.
-    Features encode the visual and operational characteristics of each image.
-    """
     f1_scene_conf = float(item["L1_scene"]["confidence"])
     f2_num_fixtures = float(item["L2_fixtures"]["num_fixtures"])
 
@@ -70,40 +64,61 @@ def extract_features(item: dict) -> list:
 
     return [f1_scene_conf, f2_num_fixtures, f3_tidy_conf, f4_stock_conf, f5_promo]
 
-
-def select_optimal_k(X_scaled: np.ndarray, k_min: int = 2, k_max: int = 8) -> tuple:
-    """
-    Evaluate K-Means for each K using Silhouette Score and return the best K.
-    Silhouette Score is preferred over Elbow Method: it yields a single,
-    unambiguous numerical value per K, making it defensible in academic writing.
-    """
+def select_optimal_k(X_raw: list, k_min: int = 2, k_max: int = 8) -> tuple:
+    data_df = pd.DataFrame(X_raw, columns=['scene_conf', 'num_fixtures', 'tidy_conf', 'stock_conf', 'is_promo'])
+    
+    # Compute Gower's distance matrix for mixed data types
+    dist_matrix = gower.gower_matrix(data_df)
+    
     scores = {}
-    k_max = min(k_max, len(X_scaled) - 1)
-
-    print("\n[K-SELECTION] Silhouette Score analysis:")
+    k_max = min(k_max, len(data_df) - 1)
+    
+    print("\n[K-SELECTION] Silhouette Score analysis (Gower + K-Medoids):")
     print(f"{'K':>4} | {'Silhouette Score':>18}")
     print("-" * 28)
-
+    
+    # Convert numpy array to list of lists for pyclustering
+    dist_matrix_list = dist_matrix.tolist()
+    
     for k in range(k_min, k_max + 1):
-        km = KMeans(n_clusters=k, random_state=42, n_init=10)
-        labels = km.fit_predict(X_scaled)
-        score = silhouette_score(X_scaled, labels)
+        initial_medoids = random.sample(range(len(data_df)), k)
+        kmedoids_instance = kmedoids(dist_matrix_list, initial_medoids, data_type='distance_matrix')
+        kmedoids_instance.process()
+        
+        clusters = kmedoids_instance.get_clusters()
+        
+        labels = np.zeros(len(data_df))
+        for cluster_id, cluster_indices in enumerate(clusters):
+            for idx in cluster_indices:
+                labels[idx] = cluster_id
+                
+        # Silhouette score supports precomputed distance metrics
+        score = silhouette_score(dist_matrix, labels, metric='precomputed')
         scores[k] = round(float(score), 4)
         print(f"{k:>4} | {score:>18.4f}")
 
     optimal_k = max(scores, key=scores.get)
     print(f"\n[K-SELECTION] Optimal K = {optimal_k} (Silhouette Score = {scores[optimal_k]})")
-    return optimal_k, scores
-
+    
+    # Final run with optimal K
+    best_initial_medoids = random.sample(range(len(data_df)), optimal_k)
+    best_kmedoids = kmedoids(dist_matrix_list, best_initial_medoids, data_type='distance_matrix')
+    best_kmedoids.process()
+    best_clusters = best_kmedoids.get_clusters()
+    
+    best_labels = np.zeros(len(data_df), dtype=int)
+    for cluster_id, cluster_indices in enumerate(best_clusters):
+        for idx in cluster_indices:
+            best_labels[idx] = cluster_id
+            
+    medoids_indices = best_kmedoids.get_medoids()
+    centroids = [X_raw[idx] for idx in medoids_indices]
+        
+    return optimal_k, best_labels, centroids, scores
 
 def describe_cluster_centroid(centroid: list, cluster_id: int, labels: np.ndarray, data: list) -> dict:
-    """
-    Build a human-readable summary of a cluster's dominant characteristics
-    by examining the centroid values and representative samples.
-    """
     f1_scene, f2_fixtures, f3_tidy, f4_stock, f5_promo = centroid
 
-    # Collect dominant scene label from items in this cluster
     scene_labels_in_cluster = []
     for i, label in enumerate(labels):
         if label == cluster_id:
@@ -124,13 +139,7 @@ def describe_cluster_centroid(centroid: list, cluster_id: int, labels: np.ndarra
         "promotional_majority": bool(f5_promo > 0.5),
     }
 
-
 async def generate_cluster_prompt(cluster_desc: dict) -> str:
-    """
-    Ask Gemini to craft a MOP prompt template tailored to this cluster's
-    statistical characteristics. The prompt instructs the downstream VLM
-    on how to caption images belonging to this routing group.
-    """
     prompt = f"""You are an expert in designing prompts for Vision-Language Models (VLMs)
 used in grocery retail image captioning.
 
@@ -144,7 +153,7 @@ The prompt must follow an OPEN+ANCHOR strategy:
   - Observable confirmed operational details (provided via {{obs_str}}) may be included naturally.
 
 The prompt must:
-1. Begin with a retail analyst persona relevant to the scene type.
+1. Begin with an objective description of the physical shelf state without assigning any subjective persona.
 2. Instruct the VLM to write 2-3 natural sentences.
 3. Tell the VLM to describe what it visually observes first.
 4. Include a VERIFIED ANCHORS block using the placeholder {{l3_str}} that the VLM MUST mention.
@@ -167,7 +176,6 @@ Cluster Profile:
 
 Return ONLY the raw prompt string. Do not wrap in markdown or add extra explanation."""
 
-    # Only use gemini-2.5-flash — retry with exponential backoff on 503 overload
     model_name = "gemini-2.5-flash"
     max_retries = 5
 
@@ -192,11 +200,9 @@ Return ONLY the raw prompt string. Do not wrap in markdown or add extra explanat
                       f"Retrying in {wait_s}s (attempt {attempt}/{max_retries})...")
                 await asyncio.sleep(wait_s)
             else:
-                raise  # non-503 error, or all retries exhausted — propagate
-
+                raise  
 
 async def generate_all_prompts(cluster_descriptions: list) -> dict:
-    """Concurrently generate a MOP prompt for each cluster."""
     tasks = [generate_cluster_prompt(desc) for desc in cluster_descriptions]
     prompts_list = await asyncio.gather(*tasks)
 
@@ -215,7 +221,6 @@ async def generate_all_prompts(cluster_descriptions: list) -> dict:
 
     return prompts
 
-
 def run_clustering():
     input_path = "data/cache/hierarchical_tags_final.json"
     if not os.path.exists(input_path):
@@ -231,18 +236,10 @@ def run_clustering():
     print(f"Loaded {n} image tag records for clustering.")
 
     X_raw = [extract_features(item) for item in data]
-    X = np.array(X_raw)
-
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
 
     # ── Phase A: K selection via Silhouette Score ─────────────────────────────
     k_max = 8 if n >= 20 else 2
-    optimal_k, silhouette_scores = select_optimal_k(X_scaled, k_min=2, k_max=k_max)
-
-    # ── Final clustering with optimal K ───────────────────────────────────────
-    kmeans = KMeans(n_clusters=optimal_k, random_state=42, n_init=10)
-    labels = kmeans.fit_predict(X_scaled)
+    optimal_k, labels, centroids, silhouette_scores = select_optimal_k(X_raw, k_min=2, k_max=k_max)
 
     # Assign clusters and save
     routes = []
@@ -252,7 +249,7 @@ def run_clustering():
         item["MOP_route_cluster"] = cluster_id
         routes.append(item)
         cluster_counts[cluster_id] = cluster_counts.get(cluster_id, 0) + 1
-        print(f"[{item['image_file']}] -> Routing Cluster {cluster_id}")
+        print(f"[{item.get('image_file', f'image_{i}')}] -> Routing Cluster {cluster_id}")
 
     print("\n[CLUSTER DISTRIBUTION]")
     for cid, count in sorted(cluster_counts.items()):
@@ -272,7 +269,7 @@ def run_clustering():
             "note": (
                 "Silhouette Score used for K selection (preferred over Elbow Method "
                 "for objective, single-value academic justification). "
-                "Higher score indicates better-separated MOP routing clusters."
+                "Gower's distance matrix was used in K-Medoids for mixed types."
             )
         }, f, indent=4)
 
@@ -280,7 +277,7 @@ def run_clustering():
     print(f"\n[PROMPT GEN] Generating {optimal_k} cluster-specific MOP prompts via Gemini...")
     cluster_descriptions = [
         describe_cluster_centroid(
-            centroid=kmeans.cluster_centers_[cid].tolist(),
+            centroid=centroids[cid],
             cluster_id=cid,
             labels=labels,
             data=data,
@@ -288,14 +285,11 @@ def run_clustering():
         for cid in range(optimal_k)
     ]
 
-    # Run async prompt generation and explicitly clean up the event loop
-    # to prevent aiohttp connector __del__ errors causing non-zero exit codes.
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
         mop_prompts = loop.run_until_complete(generate_all_prompts(cluster_descriptions))
     finally:
-        # Cancel any lingering tasks before closing
         pending = asyncio.all_tasks(loop)
         for task in pending:
             task.cancel()
@@ -311,7 +305,6 @@ def run_clustering():
     print(f"Saved K-selection report      -> {K_REPORT_PATH}")
     print(f"Saved auto-generated prompts  -> {MOP_PROMPTS_PATH}")
     print("MOP Routing completed successfully.")
-
 
 if __name__ == "__main__":
     run_clustering()
