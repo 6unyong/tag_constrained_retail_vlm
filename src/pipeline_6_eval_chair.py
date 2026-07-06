@@ -15,6 +15,7 @@ import sys
 import json
 import re
 import nltk
+import argparse
 
 # Fix Windows console encoding (cp949 can't handle accented chars in GT words)
 if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf-8-sig"):
@@ -85,8 +86,10 @@ def build_ground_truth_set(item: dict) -> set:
     for fixture in item.get("L2_fixtures", {}).get("fixtures_detected", []):
         gt_words.extend(fixture.lower().split())
 
-    # Products (all, no cap)
+    # Products (exclude Absence tags — they represent items NOT in the image)
     for p in item.get("L3_products", {}).get("top_products", []):
+        if p.get("tag_type") == "Absence":
+            continue
         gt_words.extend(p.get("product", "").lower().split())
 
     # OCR strings (all, no artificial cap)
@@ -111,11 +114,17 @@ def build_ground_truth_set(item: dict) -> set:
 
 
 def run_chair_evaluation():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--suffix", type=str, default="",
+                        help="Suffix for K-selection ablation (e.g. 'k2' or 'k4').")
+    args = parser.parse_args()
+    suffix_str = f"_{args.suffix}" if args.suffix else ""
+    
     download_nltk_data()
 
-    input_path = "data/cache/final_captions.json"
+    input_path = f"data/cache/final_captions{suffix_str}.json"
     if not os.path.exists(input_path):
-        raise FileNotFoundError("final_captions.json not found. Run pipeline_5 first.")
+        raise FileNotFoundError(f"{input_path} not found. Run pipeline_5 first.")
 
     with open(input_path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -183,8 +192,9 @@ def run_chair_evaluation():
     print(f"L-CHAIR_s (Sentence Hallucination):        {chair_s}%")
     print("==================================")
 
+    out_path = f"data/eval_results/chair_metrics{suffix_str}.json"
     os.makedirs("data/eval_results", exist_ok=True)
-    with open("data/eval_results/chair_metrics.json", "w", encoding="utf-8") as f:
+    with open(out_path, "w", encoding="utf-8") as f:
         json.dump({
             "CHAIR_i": chair_i,
             "CHAIR_s": chair_s,
@@ -196,7 +206,7 @@ def run_chair_evaluation():
             "details": eval_results,
         }, f, indent=4)
 
-    print("Saved results to data/eval_results/chair_metrics.json")
+    print(f"Saved results to {out_path}")
 
 
 if __name__ == "__main__":

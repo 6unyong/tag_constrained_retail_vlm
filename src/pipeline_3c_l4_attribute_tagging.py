@@ -61,7 +61,8 @@ def save_cache(cache: dict):
 
 def classify_attributes(image_path: str, clip_model, preprocess, device) -> dict:
     """Use CLIP zero-shot to classify operational attributes."""
-    image = preprocess(Image.open(image_path)).unsqueeze(0).to(device)
+    with Image.open(image_path) as pil_img:
+        image = preprocess(pil_img).unsqueeze(0).to(device)
     results = {}
 
     with torch.no_grad():

@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MSP Pipeline Evaluation & Future Strategy</title>
+  <style>
+:root {
+  --kcl: #003D79; --kcl-light: #1a5fa0; --kcl-pale: #e8f0fb;
+  --red: #e74c3c;  --green: #27ae60;  --amber: #f39c12;
+  --bg: #f6f8fc;   --card: #ffffff;   --text: #1a1a2e;
+  --border: #dde3ef;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); }
+a { color: var(--kcl); }
+
+/* ── Header ── */
+.hero {
+  background: linear-gradient(135deg, var(--kcl) 0%, #1a6cb5 100%);
+  color: #fff; padding: 3rem 2rem 2.5rem; text-align: center;
+}
+.hero h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.5px; }
+.hero .subtitle { margin-top: .6rem; font-size: 1rem; opacity: .85; }
+
+/* ── Nav ── */
+nav { background: var(--kcl); position: sticky; top: 0; z-index: 100;
+      display: flex; gap: 0; border-bottom: 2px solid var(--kcl-light); justify-content: center; }
+nav a { color: rgba(255,255,255,.8); text-decoration: none; padding: .65rem 1.2rem;
+        font-size: .85rem; transition: background .2s; }
+nav a:hover, nav a.active { background: var(--kcl-light); color: #fff; }
+
+/* ── Content ── */
+.container { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem; }
+section { margin-bottom: 3rem; }
+h2 { font-size: 1.4rem; color: var(--kcl); border-left: 4px solid var(--kcl);
+     padding-left: .8rem; margin-bottom: 1.2rem; }
+h3 { font-size: 1.05rem; color: #333; margin-bottom: .6rem; }
+
+/* ── Metric cards ── */
+.metrics-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; }
+.metric-card {
+  background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+  padding: 1.2rem 1rem; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,.06);
+  transition: transform .2s;
+}
+.metric-card:hover { transform: translateY(-3px); }
+.metric-card .label { font-size: .78rem; color: #777; text-transform: uppercase; letter-spacing: .5px; }
+.metric-card .value { font-size: 1.5rem; font-weight: 700; margin: .3rem 0; }
+.metric-card .sub   { font-size: .78rem; color: #888; }
+.metric-card.good .value { color: var(--green); }
+.metric-card.bad  .value { color: var(--red); }
+.metric-card.neutral .value { color: var(--kcl); }
+
+/* ── Comparison row ── */
+.compare-card {
+  background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+  overflow: hidden; margin-bottom: 3rem; box-shadow: 0 3px 12px rgba(0,0,0,.07);
+}
+.compare-header {
+  background: var(--kcl-pale); padding: .7rem 1rem;
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+}
+.compare-header .img-name { font-weight: 600; color: var(--kcl); font-size: 1.1rem; }
+.compare-body { display: grid; grid-template-columns: 250px 1fr 1fr; gap: 0; }
+.compare-img { padding: 1.5rem; background: #f9f9f9; border-right: 1px solid var(--border);
+               display: flex; flex-direction: column; align-items: center; }
+.caption-panel { padding: 1.5rem; }
+.caption-panel + .caption-panel { border-left: 1px solid var(--border); }
+.caption-panel .panel-title {
+  font-size: .85rem; font-weight: 700; text-transform: uppercase; letter-spacing: .8px;
+  margin-bottom: .8rem; padding-bottom: .4rem; border-bottom: 2px solid;
+}
+.caption-panel.baseline .panel-title { color: var(--kcl); border-color: var(--kcl); }
+.caption-panel.mop      .panel-title { color: var(--amber); border-color: var(--amber); }
+.caption-text { font-size: .9rem; line-height: 1.6; color: #333; }
+.score-pill {
+  font-size: .75rem; padding: .3rem .8rem; border-radius: 20px; white-space: normal; display: inline-block; font-weight: bold; margin-top: 10px;
+}
+.pill-good  { background: #d5f5e3; color: #1e8449; }
+.pill-bad   { background: #fde8e8; color: #c0392b; }
+.badge { display: inline-block; font-size: .68rem; padding: .15rem .45rem; border-radius: 12px; font-weight: 600; vertical-align: middle; margin-bottom: 3px; }
+.badge-hard { background: #d5f5e3; color: #1a6b3f; }
+.badge-soft { background: #fef9e7; color: #7d6608; }
+.badge-absence { background: #fde8e8; color: #922b21; }
+
+/* ── Stage evolution ── */
+.evolution-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.evo-card { background: #f8f9fa; padding: 20px; border-radius: 8px; border: 1px solid var(--border); }
+
+/* ── Tag Table ── */
+.tag-table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; font-size: 0.85rem;}
+.tag-table th, .tag-table td { padding: 8px; border: 1px solid var(--border); text-align: left; }
+.tag-table th { background: var(--kcl-pale); color: var(--kcl); width: 100px;}
+
+/* ── Chart ── */
+.chart-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.2rem; text-align: center;}
+
+/* ── Flowchart ── */
+.pipeline-flow { display: flex; align-items: center; flex-wrap: wrap; justify-content: center;
+                 gap: .4rem; padding: 1.2rem; background: var(--kcl-pale);
+                 border-radius: 10px; margin-bottom: 1rem; }
+.flow-box { background: var(--kcl); color: #fff; border-radius: 8px;
+             padding: .5rem .9rem; font-size: .78rem; font-weight: 600;
+             text-align: center; min-width: 100px; }
+.flow-box.free { background: var(--green); }
+.flow-box.api  { background: var(--amber); }
+.flow-box.local { background: #6c757d; }
+.flow-arrow { color: var(--kcl); font-size: 1.2rem; font-weight: 700; }
+  </style>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({ startOnLoad: true, theme: 'default' });
+  </script>
+</head>
+<body>
+  <div class="hero">
+    <h1>MSP Pipeline Evaluation & Future Strategy</h1>
+    <div class="subtitle">From Closed-World Failures to Open+Anchor Robustness</div>
+  </div>
+
+  <nav>
+    <a href="#sec1">1. Architecture</a>
+    <a href="#sec2">2. Tagging & GS1</a>
+    <a href="#sec3">3. v3 to v4 Evolution</a>
+    <a href="#sec4">4. Stage-by-Stage Cases</a>
+    <a href="#sec5">5. Unresolved Limitations</a>
+    <a href="#sec6">6. Future Upgrades</a>
+  </nav>
+
+  <div class="container">
+    
+    <!-- Section 1 -->
+    <section id="sec1">
+      <h2>1. Initial Hypothesis & Architecture (v3)</h2>
+      <div class="chart-wrap" style="margin-bottom: 2rem;">
+        <p style="margin-bottom: 20px;"><strong>Hypothesis:</strong> "If I strictly limit the VLM to only use deterministic facts (tags) extracted from the image, I can completely eliminate Hallucination."</p>
+        <div class="mermaid">
+          graph TD
+            A[Raw Image] --> B[L1-L4 Tag Extraction]
+            B --> C{Strict Constraint}
+            C --> D(VLM Prompt: 'Only use these provided tags')
+            D --> E[Closed-World Caption]
+            style C fill:#fce4ec,stroke:#E91E63
+            style E fill:#f5f5f5,stroke:#999
+        </div>
+      </div>
+      
+      <h3>Pipeline Architecture</h3>
+      <div class="pipeline-flow">
+        <div class="flow-box free">Stage 1<br><small>Image Ingestion</small></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box free">Stage 2A<br><small>L1+L2 Tagging<br>(CLIP / DINO)</small></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box api">Stage 2B<br><small>GS1 Taxonomy<br>(Gemini Mapper)</small></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box api">Stage 3B<br><small>L3 Products<br>(Gemini + CLIP + OCR)</small></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box free">Stage 3C<br><small>L4 Attributes<br>(OCR + CLIP)</small></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box api">Stage 4<br><small>MSP Clustering<br>+ Persona Injection</small></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-box local">Stage 5<br><small>VLM Captioning<br>(Ollama local)</small></div>
+      </div>
+      <p style="text-align:center; font-size:.8rem;color:#888;">
+        <span class="score-pill pill-good">■ Free (local only)</span>&nbsp;
+        <span class="score-pill pill-bad">■ Gemini API</span>&nbsp;
+        <span class="score-pill" style="background:#6c757d;color:#fff">■ Local VLM (Ollama)</span>
+      </p>
+    </section>
+
+    <!-- Section 2: GS1 & Tagging -->
+    <section id="sec2">
+      <h2>2. The Tagging Hierarchy & GS1 Taxonomy</h2>
+      <p style="margin-bottom:1rem;">The pipeline extracts visual evidence hierarchically (Macro &rarr; Micro) to cognitively constrain the VLM.</p>
+      
+      <div class="metrics-grid" style="margin-bottom: 2rem;">
+        <div class="metric-card neutral">
+            <div class="label">L1 Tag</div>
+            <div class="value" style="font-size:1.1rem;">Scene (Macro)</div>
+            <div class="sub">The overarching spatial context (e.g., promotional endcap, standard aisle).</div>
+        </div>
+        <div class="metric-card neutral">
+            <div class="label">L2 Tag</div>
+            <div class="value" style="font-size:1.1rem;">Fixtures</div>
+            <div class="sub">Physical structures holding products (e.g., gondola shelf, display bin).</div>
+        </div>
+        <div class="metric-card neutral">
+            <div class="label">L3 Tag</div>
+            <div class="value" style="font-size:1.1rem;">Products</div>
+            <div class="sub">Specific brand items (e.g., Coca-Cola Zero). The ultimate target for anchoring.</div>
+        </div>
+        <div class="metric-card neutral">
+            <div class="label">L4 Tag</div>
+            <div class="value" style="font-size:1.1rem;">Attributes</div>
+            <div class="sub">Operational states (e.g., stock_level: Ambiguous, tidiness: messy).</div>
+        </div>
+      </div>
+
+      <h3 style="margin-bottom: 15px; color: var(--kcl);">The Critical Role of GS1 Taxonomy (Stage 2B)</h3>
+      <p style="margin-bottom:15px;">Stage 2B maps generic product categories into the GS1 Global Product Classification framework. This bridges the gap between L2 (Fixtures) and L3 (Specific Products).</p>
+      <div class="evolution-grid">
+          <div class="evo-card" style="border-top: 4px solid var(--red);">
+              <h3 style="color:var(--red); font-size:1.1rem;">❌ Without GS1 Mapping</h3>
+              <p style="margin-top:10px;">The VLM relies solely on unstructured OCR and visual cues. In chaotic retail environments, stray text (e.g., a customer's 'Nike' shirt or a 'Travel' magazine poster in a beverage aisle) causes the VLM to suffer from <strong>Cross-Category Hallucination</strong>, inventing completely unrelated products.</p>
+          </div>
+          <div class="evo-card" style="border-top: 4px solid var(--green);">
+              <h3 style="color:var(--green); font-size:1.1rem;">✅ With GS1 Mapping</h3>
+              <p style="margin-top:10px;">Stage 2B provides a strict taxonomic boundary (e.g., <em>Family: Beverages, Brick: Carbonated Beverages</em>). This creates a <strong>Cognitive Anchor</strong>. When Stage 3B generates L3 tags, it forcefully ignores irrelevant OCR noise because it knows it must only output products matching the GS1 category.</p>
+          </div>
+      </div>
+    </section>
+
+    <!-- Section 3 -->
+    <section id="sec3">
+      <h2>3. Limitations of v3 and Evolution to v4</h2>
+      <div class="evolution-grid">
+          <div class="evo-card">
+              <h3>v3: Closed-World Constraint</h3>
+              <p><strong>Approach:</strong> Strict limitation where the VLM was instructed to ONLY describe the image using the provided L1-L4 tags.</p>
+              <br>
+              <p><strong>Result:</strong> While hallucination was seemingly reduced, the VLM became a parrot. It lost its powerful ability to describe unstructured visual context (e.g., Halloween themes, seasonal colors, complex layout contexts). The tags 'replaced' the VLM's vision rather than 'guiding' it.</p>
+          </div>
+          <div class="evo-card">
+              <h3>v4: Open+Anchor Strategy (Current)</h3>
+              <p><strong>Approach:</strong> VLM is allowed to describe what it freely sees (Open), but it MUST anchor its description to the verified L3 products mapped to the GS1 taxonomy and MUST NOT guess ambiguous L4 states.</p>
+              <br>
+              <p><strong>Result:</strong> Preserves the VLM's natural descriptive fluency and zero-shot reasoning, while structurally blocking fatal hallucinations like inventing non-existent brands or promotional signs.</p>
+          </div>
+      </div>
+    </section>
+
+    <!-- Section 4 -->
+    <section id="sec4">
+      <h2>4. Stage-by-Stage Execution: Success & Failure Cases</h2>
+      <p style="margin-bottom:1.5rem;">Below are <strong>4 representative cases (2 Successes, 2 Failures)</strong> demonstrating how the image, extracted tags, generated prompt, and final caption flow together. While the MSP strategy works perfectly in resolving noise (Cases 1 & 2), it is still highly vulnerable to "Cascading Errors" (Cases 3 & 4) caused by upstream detection inaccuracies.</p>
+      
+      <!-- CASE 1 (Success) -->
+      <div class="compare-card">
+        <div class="compare-header" style="background: #e8f8f5;">
+          <div class="img-name" style="color: #117a65;">Case 1 (Success): sample_10072.jpg (Accurate Brand Anchoring)</div>
+        </div>
+        <div class="compare-body">
+            <!-- Column 1: Image & Tags -->
+            <div class="compare-img">
+                <img src="../processed/sample_10072.jpg" alt="Retail Image" style="width: 100%; height: auto; border-radius: 5px; margin-bottom: 1rem; border: 1px solid #ccc;">
+                <table class="tag-table">
+                  <tr><th>L0 Context</th><td>Halloween Theme</td></tr>
+                  <tr><th>L1 Scene</th><td>continuous grocery aisle shelf</td></tr>
+                  <tr><th>L2 Fixtures</th><td>shelf</td></tr>
+                  <tr><th>L3 Products</th><td><span class='badge badge-hard'>Hard (0.68)</span> Favorite Day Black Cookie Icing<br><span class='badge badge-hard'>Hard (0.55)</span> Favorite Day Cookie Icing</td></tr>
+                  <tr><th>L4 Attributes</th><td>stock_level: Ambiguous</td></tr>
+                </table>
+            </div>
+            
+            <!-- Column 2: Prompt -->
+            <div class="caption-panel mop" style="background:#fdfaf6;">
+                <div class="panel-title">Final VLM Prompt (Open+Anchor)</div>
+                <div class="caption-text" style="font-family: monospace; font-size: 0.82rem; line-height: 1.4;">
+You are a professional retail analyst writing concise shelf-inspection notes.<br><br>
+
+RULES:<br>
+1. Describe what you actually SEE.<br>
+2. You MUST mention the following VERIFIED items — they are confirmed present:<br>
+&nbsp;&nbsp;- Favorite Day Black Cookie Icing<br>
+&nbsp;&nbsp;- Favorite Day Cookie Icing<br>
+3. State operational details only when clearly visible.<br>
+4. Do NOT invent brand names...<br><br>
+
+Background context: Halloween Theme<br>
+Scene type: continuous grocery aisle shelf | Fixtures: shelf<br><br>
+
+Write your caption now:
+                </div>
+            </div>
+
+            <!-- Column 3: Output Comparison -->
+            <div class="caption-panel baseline">
+                <div class="panel-title">VLM Outputs</div>
+                <div class="caption-text">
+                    <strong>❌ Unconstrained Baseline:</strong><br>
+                    "A store shelf is full of Halloween candy bags arranged neatly by brand name... Some of the brands include Nestle Tic Tacs, and Ferrero Rocher among others..."
+                    <span class="score-pill pill-bad" style="display:block;">Hallucinated 'Nestle Tic Tacs' and 'Ferrero Rocher'</span>
+                    
+                    <hr style="margin: 15px 0; border: 0; border-top: 1px dashed var(--border);">
+
+                    <strong>✅ Anchored Caption:</strong><br>
+                    "The image shows a retail store with a Halloween theme. The focus of the image is on four boxes of 'Favorite Day Black Cookie Icing'... In addition to these, there is another product on the shelf called 'Favorite Day Cookie Icing'..."
+                    <span class="score-pill pill-good" style="display:block;">Successfully anchors to 'Favorite Day Cookie Icing' and completely avoids baseline brand hallucinations</span>
+                </div>
+            </div>
+        </div>
+      </div>
+
+      <!-- CASE 2 (Success) -->
+      <div class="compare-card">
+        <div class="compare-header" style="background: #e8f8f5;">
+          <div class="img-name" style="color: #117a65;">Case 2 (Success): sample_10039.jpg (Halloween Kit Promotion)</div>
+        </div>
+        <div class="compare-body">
+            <!-- Column 1: Image & Tags -->
+            <div class="compare-img">
+                <img src="../processed/sample_10039.jpg" alt="Retail Image" style="width: 100%; height: auto; border-radius: 5px; margin-bottom: 1rem; border: 1px solid #ccc;">
+                <table class="tag-table">
+                  <tr><th>L0 Context</th><td>Halloween Theme</td></tr>
+                  <tr><th>L1 Scene</th><td>promotional endcap</td></tr>
+                  <tr><th>L2 Fixtures</th><td>display box, shelf</td></tr>
+                  <tr><th>L3 Products</th><td><span class='badge badge-hard'>Hard (0.72)</span> Favorite Day Haunted Village Cookie House Kit</td></tr>
+                  <tr><th>L4 Attributes</th><td>tidiness: disorganized</td></tr>
+                </table>
+            </div>
+            
+            <!-- Column 2: Prompt -->
+            <div class="caption-panel mop" style="background:#fdfaf6;">
+                <div class="panel-title">Final VLM Prompt (Open+Anchor)</div>
+                <div class="caption-text" style="font-family: monospace; font-size: 0.82rem; line-height: 1.4;">
+You are a professional retail analyst writing concise shelf-inspection notes.<br><br>
+
+RULES:<br>
+1. Describe what you actually SEE.<br>
+2. You MUST mention the following VERIFIED items:<br>
+&nbsp;&nbsp;- Favorite Day Haunted Village Cookie House Kit<br>
+3. State operational details only when clearly visible.<br>
+4. Do NOT invent brand names...<br><br>
+
+Background context: Halloween Theme<br>
+Scene type: promotional endcap | Fixtures: display box, shelf<br><br>
+
+Write your caption now:
+                </div>
+            </div>
+
+            <!-- Column 3: Output Comparison -->
+            <div class="caption-panel baseline">
+                <div class="panel-title">VLM Outputs</div>
+                <div class="caption-text">
+                    <strong>❌ Unconstrained Baseline:</strong><br>
+                    "A store isle with a box that says 'Fabulous day' on it. A wall on the side of the building has several windows... The sky has clouds in it... The sun is shining brightly. There are no birds flying..."
+                    <span class="score-pill pill-bad" style="display:block;">Severe out-of-domain hallucination, describing an outdoor scene instead of retail shelf</span>
+                    
+                    <hr style="margin: 15px 0; border: 0; border-top: 1px dashed var(--border);">
+
+                    <strong>✅ Anchored Caption:</strong><br>
+                    "A retail image showcasing a Halloween themed promotion for the 'Favorite Day Haunted Village Cookie House Kit'. The kit is displayed on an orange and black cardboard box with a picture of a haunted house on it..."
+                    <span class="score-pill pill-good" style="display:block;">MSP perfectly reins in the VLM to focus on the actual retail product and Halloween theme</span>
+                </div>
+            </div>
+        </div>
+      </div>
+
+      <!-- CASE 3 (Failure) -->
+      <div class="compare-card">
+        <div class="compare-header" style="background: #fdf2e9;">
+          <div class="img-name" style="color: #d35400;">Case 3 (Failure): sample_1.jpg (Coca-Cola Cascading Error)</div>
+        </div>
+        <div class="compare-body">
+            <!-- Column 1: Image & Tags -->
+            <div class="compare-img">
+                <img src="../processed/sample_1.jpg" alt="Retail Image" style="width: 100%; height: auto; border-radius: 5px; margin-bottom: 1rem; border: 1px solid #ccc;">
+                <table class="tag-table">
+                  <tr><th>L0 Context</th><td>Year 2014</td></tr>
+                  <tr><th>L1 Scene</th><td>promotional endcap</td></tr>
+                  <tr><th>L2 Fixtures</th><td>shelf, shelf</td></tr>
+                  <tr><th>L3 Products</th><td><span class='badge badge-hard'>Hard (0.16)</span> Coca-Cola Zero Sugar<br><span class='badge badge-soft'>Soft (0.14)</span> Coca-Cola Signature Mixers</td></tr>
+                  <tr><th>L4 Attributes</th><td>stock_level: Ambiguous</td></tr>
+                </table>
+            </div>
+            
+            <!-- Column 2: Prompt -->
+            <div class="caption-panel mop" style="background:#fdfaf6;">
+                <div class="panel-title">Final VLM Prompt (Open+Anchor)</div>
+                <div class="caption-text" style="font-family: monospace; font-size: 0.82rem; line-height: 1.4;">
+You are a professional retail analyst writing concise shelf-inspection notes.<br><br>
+
+RULES:<br>
+1. Describe what you actually SEE.<br>
+2. You MUST mention the following VERIFIED items:<br>
+&nbsp;&nbsp;- Coca-Cola Zero Sugar<br>
+4. Do NOT invent brand names...<br><br>
+
+Scene type: promotional endcap | Fixtures: shelf<br><br>
+
+Write your caption now:
+                </div>
+            </div>
+
+            <!-- Column 3: Output Comparison -->
+            <div class="caption-panel baseline">
+                <div class="panel-title">VLM Outputs</div>
+                <div class="caption-text">
+                    <strong>✅ Unconstrained Baseline:</strong><br>
+                    "1. A stack of red Coca-Cola bottles are lined up on a store shelf... 4. Each bottle has a red label with white text 'Coca-Cola' on the front. 5. A yellow tag is attached to one of the bottles."
+                    <span class="score-pill pill-good" style="display:block;">Better visual accuracy, avoids forcing weak specific models</span>
+                    
+                    <hr style="margin: 15px 0; border: 0; border-top: 1px dashed var(--border);">
+
+                    <strong>❌ Anchored Caption:</strong><br>
+                    "The image shows a retail setting with a promotion for Coca-Cola. The display consists of stacks of Coca-Cola bottles... There is also a yellow price tag visible on the left side of the display."
+                    <span class="score-pill pill-bad" style="display:block; background:#fde8e8; color:#c0392b;">Cascading Error: Forced to hallucinate specific Coca-Cola lines due to weak False Positives (Conf: 0.16) in L3</span>
+                </div>
+            </div>
+        </div>
+      </div>
+
+      <!-- CASE 4 (Failure) -->
+      <div class="compare-card">
+        <div class="compare-header" style="background: #fdf2e9;">
+          <div class="img-name" style="color: #d35400;">Case 4 (Failure): sample_100.jpg (Almat Oxi-Bright Error)</div>
+        </div>
+        <div class="compare-body">
+            <!-- Column 1: Image & Tags -->
+            <div class="compare-img">
+                <img src="../processed/sample_100.jpg" alt="Retail Image" style="width: 100%; height: auto; border-radius: 5px; margin-bottom: 1rem; border: 1px solid #ccc;">
+                <table class="tag-table">
+                  <tr><th>L0 Context</th><td>Year 2014</td></tr>
+                  <tr><th>L1 Scene</th><td>promotional endcap</td></tr>
+                  <tr><th>L2 Fixtures</th><td>display box, bin, shelf</td></tr>
+                  <tr><th>L3 Products</th><td><span class='badge badge-hard'>Hard (0.42)</span> Almat Oxi-Bright Stain Remover Powder</td></tr>
+                  <tr><th>L4 Attributes</th><td>stock_level: obvious missing items</td></tr>
+                </table>
+            </div>
+            
+            <!-- Column 2: Prompt -->
+            <div class="caption-panel mop" style="background:#fdfaf6;">
+                <div class="panel-title">Final VLM Prompt (Open+Anchor)</div>
+                <div class="caption-text" style="font-family: monospace; font-size: 0.82rem; line-height: 1.4;">
+You are a professional retail analyst writing concise shelf-inspection notes.<br><br>
+
+RULES:<br>
+1. Describe what you actually SEE.<br>
+2. You MUST mention the following VERIFIED items:<br>
+&nbsp;&nbsp;- Almat Oxi-Bright Stain Remover Powder<br>
+4. Do NOT invent brand names...<br><br>
+
+Scene type: promotional endcap | Fixtures: display box, shelf<br><br>
+
+Write your caption now:
+                </div>
+            </div>
+
+            <!-- Column 3: Output Comparison -->
+            <div class="caption-panel baseline">
+                <div class="panel-title">VLM Outputs</div>
+                <div class="caption-text">
+                    <strong>✅ Unconstrained Baseline:</strong><br>
+                    "1. Two containers of Almond Oxi-Bright sit in a blue bin. 2. The bin is labeled with a yellow sign..."
+                    <span class="score-pill pill-good" style="display:block;">Misread name as 'Almond', but identified basic containers correctly</span>
+                    
+                    <hr style="margin: 15px 0; border: 0; border-top: 1px dashed var(--border);">
+
+                    <strong>❌ Anchored Caption:</strong><br>
+                    "The image shows a blue display box with three Almight Oxi-Bright flavors of Almight ice cream..."
+                    <span class="score-pill pill-bad" style="display:block; background:#fde8e8; color:#c0392b;">Cascading Error: High False Positive causes VLM to hallucinate 'ice cream flavors', compounding the error</span>
+                </div>
+            </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Section 5 -->
+    <section id="sec5">
+      <h2>5. Unresolved Limitations in v4</h2>
+      <p style="margin-bottom: 1rem;">As clearly demonstrated by the Cascading Errors in the flow cases above (Cases 3 & 4), the v4 pipeline still suffers from critical theoretical shortcomings that demand a complete architectural overhaul.</p>
+      <div class="metrics-grid">
+        <div class="metric-card bad">
+            <div class="label">Logical Leap</div>
+            <div class="value">Persona Bias</div>
+            <div class="sub">Assigning a subjective <strong>'Professional Retail Analyst'</strong> persona was a logical leap. I realized that a simple collection of discrete tags (the K-means output) intrinsically lacks the rich semantic context required to support a complex business persona, forcing the AI to hallucinate context to fill the gap.</div>
+        </div>
+        <div class="metric-card bad">
+            <div class="label">Circular Logic</div>
+            <div class="value">Metric Flaw</div>
+            <div class="sub">The previous <code>Retail-CHAIR</code> metric merely measured 'prompt compliance' rather than true hallucination, and severely penalized harmless morphological variations (e.g., plurals).</div>
+        </div>
+        <div class="metric-card bad">
+            <div class="label">Math Error</div>
+            <div class="value">Clustering</div>
+            <div class="sub">Forcing mixed-type data (text, numbers, booleans) into Euclidean space (K-means++ or Sentence-BERT) caused extreme geometric distortion.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 6 -->
+    <section id="sec6">
+      <h2>6. Proposed Upgrades for Re-Experiment</h2>
+      <p style="margin-bottom: 1rem;">To overcome these cascading limitations, I propose the following academically rigorous methodologies for the upcoming full-scale experiment.</p>
+      <div class="evolution-grid">
+          <div class="evo-card">
+              <h3>1. Gower's Distance & K-Medoids</h3>
+              <p>I completely removed the problematic 'Business Persona' approach. Instead of forcing subjective roles, I use Gower's Distance and K-Medoids to mathematically categorize the shelf into objective physical archetypes (e.g., 'Empty Shelf', 'Cluttered Display'). The cluster itself now provides the true semantic context about the shelf's physical state for accurate prompt routing.</p>
+          </div>
+          <div class="evo-card">
+              <h3>2. L-CHAIR (Lemmatized CHAIR)</h3>
+              <p>Replaces the flawed Retail-CHAIR. By integrating NLTK lemmatization, I eliminate false penalties caused by word variations, allowing for an incredibly strict yet fair measure of true generative hallucination.</p>
+          </div>
+          <div class="evo-card" style="grid-column: span 2;">
+              <h3>3. Laplacian + FFT Hybrid Preprocessing</h3>
+              <p>A mathematically robust defense mechanism. Simple variance (Laplacian) fails in complex lighting, so I introduce frequency domain analysis (Fast Fourier Transform) to filter out highly problematic blurry data <strong>before it causes 'Cascading Errors' in the LLM.</strong></p>
+          </div>
+      </div>
+    </section>
+
+  </div>
+</body>
+</html>

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>L-CHAIR Annotation Tool</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <header class="glass-header">
+            <h1>L-CHAIR Evaluation Tool</h1>
+            <div class="progress-container">
+                <span id="progress-text">Loading...</span>
+                <div class="progress-bar">
+                    <div id="progress-fill" class="progress-fill"></div>
+                </div>
+            </div>
+        </header>
+
+        <main class="main-content" id="main-content">
+            <!-- Loading State -->
+            <div id="loading-state" class="state-panel active">
+                <div class="spinner"></div>
+                <p>Loading next task...</p>
+            </div>
+
+            <!-- Complete State -->
+            <div id="complete-state" class="state-panel">
+                <div class="success-icon">✓</div>
+                <h2>All tasks complete!</h2>
+                <p>Thank you for your annotation.</p>
+            </div>
+
+            <!-- Annotation Task -->
+            <div id="annotation-task" class="task-grid">
+                <div class="image-panel glass-panel">
+                    <div class="image-container">
+                        <img id="task-image" src="" alt="Retail Image">
+                    </div>
+                </div>
+
+                <div class="controls-panel">
+                    <div class="caption-card baseline glass-panel">
+                        <div class="card-header">
+                            <h3>Baseline Caption</h3>
+                            <label class="checkbox-container">
+                                <input type="checkbox" id="baseline-lchair">
+                                <span class="checkmark"></span>
+                                L-CHAIR Hallucination Detected
+                            </label>
+                        </div>
+                        <p id="baseline-text" class="caption-text"></p>
+                        <button class="win-btn baseline-btn" onclick="submitAnnotation('baseline')">Baseline Wins</button>
+                    </div>
+
+                    <div class="caption-card mop glass-panel">
+                        <div class="card-header">
+                            <h3>Proposed MOP Caption</h3>
+                            <label class="checkbox-container">
+                                <input type="checkbox" id="mop-lchair">
+                                <span class="checkmark"></span>
+                                L-CHAIR Hallucination Detected
+                            </label>
+                        </div>
+                        <p id="mop-text" class="caption-text"></p>
+                        <button class="win-btn mop-btn" onclick="submitAnnotation('mop')">MOP Wins</button>
+                    </div>
+
+                    <div class="action-footer glass-panel">
+                        <textarea id="annotation-notes" placeholder="Optional notes..."></textarea>
+                        <button class="win-btn tie-btn" onclick="submitAnnotation('tie')">Tie (Equal Quality)</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

@@ -81,13 +81,15 @@ def build_caption(item: dict) -> str:
 
     # ── Sentence 2: operational context + OCR ───────────────────────────────
     parts = []
-    # Normalise verbose tidiness/stock labels to short tokens
-    stock_short = "well-stocked"   if "well" in stock.lower()   else \
-                  "low stock"      if "low"  in stock.lower()   else \
-                  "out of stock"   if "out"  in stock.lower()   else \
+    # Normalise verbose CLIP labels (from pipeline_3c) to short readable tokens
+    stock_lc = stock.lower()
+    stock_short = "well-stocked"   if "tightly packed" in stock_lc or "no empty" in stock_lc else \
+                  "low stock"      if "missing items"  in stock_lc or "empty gaps" in stock_lc else \
+                  "out of stock"   if "completely empty" in stock_lc or "no products" in stock_lc else \
                   "unknown stock level"
-    tidy_short  = "tidy"           if "tidy" in tidy.lower() and "untidy" not in tidy.lower() else \
-                  "untidy"         if "untidy" in tidy.lower() or "disorganised" in tidy.lower() or "messy" in tidy.lower() else \
+    tidy_lc = tidy.lower()
+    tidy_short  = "tidy"           if ("neat" in tidy_lc or "organized" in tidy_lc) and "messy" not in tidy_lc else \
+                  "untidy"         if "messy" in tidy_lc or "disorganized" in tidy_lc or "untidy" in tidy_lc else \
                   "neatly arranged"
     promo_short = "with active promotions" if "promo" in promo.lower() and "no promo" not in promo.lower() and "ambig" not in promo.lower() else ""
 

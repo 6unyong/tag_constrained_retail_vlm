@@ -15,7 +15,8 @@ Design rationale (v2 changes):
 10K Resilience:
 - Dict-based checkpoint: already-judged pairs skipped on re-run
 - Per-image error handling + exponential backoff on 503
-- Auto-save after every judgment
+- Auto-save after every batch
+- Semaphore-bounded async concurrency for throughput
 """
 import asyncio
 import base64
@@ -27,9 +28,12 @@ from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 
+import sys
+if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf-8-sig"):
+    sys.stdout = open(sys.stdout.fileno(), mode="w", encoding="utf-8", buffering=1, closefd=False)
+
 load_dotenv()
 
-MOP_PATH          = "data/cache/final_captions.json"
 DEFAULT_BASELINE  = "data/cache/baseline_captions.json"
 IMG_DIR           = "data/processed"
 DEFAULT_OUT_PATH  = "data/eval_results/llm_judge_scores.json"
@@ -37,6 +41,7 @@ ERROR_LOG         = "data/cache/error_log.txt"
 DEFAULT_MODEL     = "gemini-2.5-flash"
 
 AUTOSAVE_INTERVAL = 5
+CONCURRENCY       = 3
 
 
 def log_error(img_name: str, error: Exception):
@@ -178,22 +183,73 @@ Return ONLY valid JSON in this exact format:
                 return None
 
 
+async def _judge_single_image(
+    img_name: str, mop_map: dict, base_map: dict,
+    client, model_name: str, semaphore: asyncio.Semaphore,
+) -> dict | None:
+    """
+    Process a single image judgment with semaphore-bounded concurrency.
+    Returns the result dict (with image_file, captions, preference) or None.
+    """
+    mop_item  = mop_map[img_name]
+    base_item = base_map[img_name]
+
+    mop_caption  = mop_item.get("FINAL_CAPTION", "")
+    base_caption = base_item.get("FINAL_CAPTION", "")
+
+    img_path = os.path.join(IMG_DIR, img_name)
+    img_b64  = _img_to_b64(img_path)
+
+    if not img_b64:
+        print(f"  [SKIP] Image file not found: {img_path}")
+        return None
+
+    print(f"Judging pair: {img_name}...")
+
+    # Randomise caption order to prevent position bias
+    if random.random() < 0.5:
+        cap_a, cap_b = mop_caption, base_caption
+        label_a, label_b = "MOP", "Baseline"
+    else:
+        cap_a, cap_b = base_caption, mop_caption
+        label_a, label_b = "Baseline", "MOP"
+
+    async with semaphore:
+        result = await pairwise_judge(
+            client, img_b64, cap_a, cap_b, label_a, label_b, model_name
+        )
+
+    if result:
+        result["image_file"]    = img_name
+        result["mop_caption"]   = mop_caption
+        result["base_caption"]  = base_caption
+
+        pref = result["preference"]
+        print(f"  Preference: {pref} | "
+              f"VisAcc: {result['visual_accuracy_winner']} | "
+              f"FactComp: {result['factual_completeness_winner']} | "
+              f"UncertH: {result['uncertainty_handling_winner']}")
+        print(f"  Reasoning: {result['reasoning'][:100]}...")
+        return result
+    else:
+        log_error(img_name, Exception("No result returned from judge"))
+        return None
+
+
 async def run_llm_judge():
     parser = argparse.ArgumentParser(description="Multimodal Pairwise LLM-as-a-Judge")
     parser.add_argument("--sample", type=int, default=None,
                         help="Randomly sample N pairs to judge (default: all)")
     parser.add_argument("--model", default=DEFAULT_MODEL,
                         help=f"Gemini model name (default: {DEFAULT_MODEL})")
-    parser.add_argument("--baseline-path", default=DEFAULT_BASELINE,
-                        help=f"Baseline captions JSON path (default: {DEFAULT_BASELINE}). "
-                             "E.g. data/cache/baseline_captions_phi3.json for same-model comparison.")
-    parser.add_argument("--out", default=DEFAULT_OUT_PATH,
-                        help=f"Output JSON path (default: {DEFAULT_OUT_PATH}). "
-                             "E.g. data/eval_results/llm_judge_scores_phi3.json")
+    parser.add_argument("--suffix", type=str, default="",
+                        help="Suffix for K-selection ablation (e.g. 'k2' or 'k4').")
     args = parser.parse_args()
 
-    baseline_path = args.baseline_path
-    out_path      = args.out
+    suffix_str = f"_{args.suffix}" if args.suffix else ""
+    baseline_path = DEFAULT_BASELINE
+    mop_path      = f"data/cache/final_captions{suffix_str}.json"
+    out_path      = f"data/eval_results/llm_judge_scores{suffix_str}.json"
 
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
@@ -206,12 +262,12 @@ async def run_llm_judge():
     print(f"[PATHS] Baseline: {baseline_path} | Output: {out_path}")
 
     # Load both caption sets
-    if not os.path.exists(MOP_PATH):
-        raise FileNotFoundError(f"MOP captions not found: {MOP_PATH}")
+    if not os.path.exists(mop_path):
+        raise FileNotFoundError(f"MOP captions not found: {mop_path}")
     if not os.path.exists(baseline_path):
         raise FileNotFoundError(f"Baseline captions not found: {baseline_path}")
 
-    with open(MOP_PATH,       "r", encoding="utf-8") as f: mop_data      = json.load(f)
+    with open(mop_path,       "r", encoding="utf-8") as f: mop_data      = json.load(f)
     with open(baseline_path,  "r", encoding="utf-8") as f: baseline_data = json.load(f)
 
     mop_map  = {i["image_file"]: i for i in mop_data      if "image_file" in i}
@@ -235,55 +291,32 @@ async def run_llm_judge():
                   f"(target: {args.sample}, done: {already_done}).")
 
     print(f"\n--- Pairwise Multimodal Evaluation ({len(unjudged)} pairs to judge) ---")
+
+    semaphore = asyncio.Semaphore(CONCURRENCY)
     new_count = 0
 
-    for img_name in unjudged:
-        mop_item  = mop_map[img_name]
-        base_item = base_map[img_name]
+    # Process in batches to allow periodic auto-save
+    batch_size = CONCURRENCY * 5
+    for batch_start in range(0, len(unjudged), batch_size):
+        batch = unjudged[batch_start: batch_start + batch_size]
 
-        mop_caption  = mop_item.get("FINAL_CAPTION", "")
-        base_caption = base_item.get("FINAL_CAPTION", "")
+        tasks = [
+            _judge_single_image(
+                img_name, mop_map, base_map, client, model_name, semaphore
+            )
+            for img_name in batch
+        ]
+        results = await asyncio.gather(*tasks)
 
-        img_path = os.path.join(IMG_DIR, img_name)
-        img_b64  = _img_to_b64(img_path)
+        for result in results:
+            if result is not None:
+                cache[result["image_file"]] = result
+                new_count += 1
 
-        if not img_b64:
-            print(f"  [SKIP] Image file not found: {img_path}")
-            continue
-
-        print(f"Judging pair: {img_name}...")
-
-        # Randomise caption order to prevent position bias
-        if random.random() < 0.5:
-            cap_a, cap_b = mop_caption, base_caption
-            label_a, label_b = "MOP", "Baseline"
-        else:
-            cap_a, cap_b = base_caption, mop_caption
-            label_a, label_b = "Baseline", "MOP"
-
-        result = await pairwise_judge(
-            client, img_b64, cap_a, cap_b, label_a, label_b, model_name
-        )
-
-        if result:
-            result["image_file"]    = img_name
-            result["mop_caption"]   = mop_caption
-            result["base_caption"]  = base_caption
-            cache[img_name] = result
-            new_count += 1
-
-            pref = result["preference"]
-            print(f"  Preference: {pref} | "
-                  f"VisAcc: {result['visual_accuracy_winner']} | "
-                  f"FactComp: {result['factual_completeness_winner']} | "
-                  f"UncertH: {result['uncertainty_handling_winner']}")
-            print(f"  Reasoning: {result['reasoning'][:100]}...")
-
-            if new_count % AUTOSAVE_INTERVAL == 0:
-                save_results(cache, out_path)
-                print(f"  [AUTOSAVE] {new_count} new judgments saved.")
-        else:
-            log_error(img_name, Exception("No result returned from judge"))
+        # Auto-save after each batch
+        save_results(cache, out_path)
+        print(f"  [AUTOSAVE] Batch complete. New this session: {new_count} | "
+              f"Total: {already_done + new_count}/{len(common)}")
 
     # Final save + summary
     save_results(cache, out_path)

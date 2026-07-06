@@ -12,6 +12,7 @@ import json
 import asyncio
 import time
 import random
+import argparse
 import numpy as np
 import pandas as pd
 import gower
@@ -65,6 +66,7 @@ def extract_features(item: dict) -> list:
     return [f1_scene_conf, f2_num_fixtures, f3_tidy_conf, f4_stock_conf, f5_promo]
 
 def select_optimal_k(X_raw: list, k_min: int = 2, k_max: int = 8) -> tuple:
+    random.seed(42)  # Reproducible clustering
     data_df = pd.DataFrame(X_raw, columns=['scene_conf', 'num_fixtures', 'tidy_conf', 'stock_conf', 'is_promo'])
     
     # Compute Gower's distance matrix for mixed data types
@@ -221,7 +223,7 @@ async def generate_all_prompts(cluster_descriptions: list) -> dict:
 
     return prompts
 
-def run_clustering():
+def run_clustering(force_k: int = None):
     input_path = "data/cache/hierarchical_tags_final.json"
     if not os.path.exists(input_path):
         raise FileNotFoundError(f"{input_path} not found. Run L4 tagging pipeline first.")
@@ -239,7 +241,12 @@ def run_clustering():
 
     # ── Phase A: K selection via Silhouette Score ─────────────────────────────
     k_max = 8 if n >= 20 else 2
-    optimal_k, labels, centroids, silhouette_scores = select_optimal_k(X_raw, k_min=2, k_max=k_max)
+    
+    if force_k is not None:
+        print(f"\n[K-SELECTION] Bypassing automatic selection. Forcing K={force_k} as requested.")
+        optimal_k, labels, centroids, silhouette_scores = select_optimal_k(X_raw, k_min=force_k, k_max=force_k)
+    else:
+        optimal_k, labels, centroids, silhouette_scores = select_optimal_k(X_raw, k_min=2, k_max=k_max)
 
     # Assign clusters and save
     routes = []
@@ -307,5 +314,10 @@ def run_clustering():
     print("MOP Routing completed successfully.")
 
 if __name__ == "__main__":
-    run_clustering()
+    parser = argparse.ArgumentParser(description="MOP Routing Clustering")
+    parser.add_argument("--force-k", type=int, default=None,
+                        help="Force a specific K value instead of using Silhouette optimal K.")
+    args = parser.parse_args()
+    
+    run_clustering(force_k=args.force_k)
     sys.exit(0)

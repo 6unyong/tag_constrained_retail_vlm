@@ -1,0 +1,26 @@
+﻿PERSONA: You are a professional retail analyst writing concise shelf-inspection notes.<br><br>
+
+PERSONA: You are a professional retail analyst writing concise shelf-inspection notes.<br><br>
+
+PERSONA: You are a professional retail analyst writing concise shelf-inspection notes.<br><br>
+
+STAT: 74c3c;  --green: #27ae60;  --amber: #f39c12;
+
+STAT: baseline .panel-title { color: var(--kcl); border-color: var(--kcl); }
+
+STAT: mop      .panel-title { color: var(--amber); border-color: var(--amber); }
+
+STAT: mop" style="background:#fdfaf6;">
+
+STAT: baseline">
+
+STAT: Baseline:</strong><br>
+
+STAT: baseline brand hallucinations</span>
+
+STAT: mop" style="background:#fdfaf6;">
+
+STAT: baseline">
+
+STAT: Baseline:</strong><br>
+

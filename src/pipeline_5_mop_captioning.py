@@ -18,9 +18,12 @@ import ollama
 import argparse
 from collections import Counter
 
-IN_PATH = "data/cache/clustered_routes.json"
-OUT_PATH = "data/cache/final_captions.json"
-MOP_PROMPTS_PATH = "data/cache/mop_prompts.json"
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+elif sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf-8-sig"):
+    sys.stdout = open(sys.stdout.fileno(), mode="w", encoding="utf-8", buffering=1, closefd=False)
+
 SAMPLE_LIST_PATH = "data/cache/sample_image_list.json"  # shared with baseline
 ERROR_LOG = "data/cache/error_log.txt"
 AUTOSAVE_INTERVAL = 50
@@ -34,14 +37,14 @@ OLLAMA_TIMEOUT = 30  # seconds
 DEFAULT_MODEL = "llava-phi3"
 
 
-def load_mop_prompts() -> dict:
+def load_mop_prompts(mop_prompts_path: str) -> dict:
     """
     Load auto-generated cluster prompts from pipeline_4 output.
     Returns {cluster_id (int): prompt_template (str)}.
     Falls back to a safe generic prompt if the file is missing.
     """
-    if os.path.exists(MOP_PROMPTS_PATH):
-        with open(MOP_PROMPTS_PATH, "r", encoding="utf-8") as f:
+    if os.path.exists(mop_prompts_path):
+        with open(mop_prompts_path, "r", encoding="utf-8") as f:
             raw = json.load(f)
         # Keys are stored as strings in JSON — convert back to int
         return {int(k): v["mop_prompt_template"] for k, v in raw.items()}
@@ -54,34 +57,33 @@ def log_error(img_path: str, error: Exception):
     with open(ERROR_LOG, "a", encoding="utf-8") as f:
         f.write(f"[pipeline_5] {img_path} | {type(error).__name__}: {error}\n")
 
-def load_existing_cache() -> dict:
+def load_existing_cache(out_path: str) -> dict:
     """Load previously captioned items as {image_path: item} for checkpoint resumption."""
-    if os.path.exists(OUT_PATH):
-        with open(OUT_PATH, "r", encoding="utf-8") as f:
+    if os.path.exists(out_path):
+        with open(out_path, "r", encoding="utf-8") as f:
             existing = json.load(f)
         return {item["image_path"]: item for item in existing}
     return {}
 
-def save_cache(cache: dict):
+def save_cache(cache: dict, out_path: str):
     os.makedirs("data/cache", exist_ok=True)
-    with open(OUT_PATH, "w", encoding="utf-8") as f:
+    with open(out_path, "w", encoding="utf-8") as f:
         json.dump(list(cache.values()), f, indent=4, ensure_ascii=False)
 
 # ── L4 label → natural language helpers ─────────────────────────────────────
 
 _STOCK_MAP = {
-    "well-filled":          "shelves appear well-stocked",
-    "obvious missing items": "some visible shelf gaps",
+    "tightly packed":          "shelves appear well-stocked",
+    "missing items": "some visible shelf gaps",
     "completely empty":     "shelves appear empty",
 }
 _TIDY_MAP = {
-    "neatly organized":  "neatly organised",
-    "messy":             "display appears disorganised",
-    "untidy":            "display appears disorganised",
+    "perfectly neat":  "neatly organised",
+    "messy, disorganized": "display appears disorganised",
 }
 _PROMO_MAP = {
-    "promotional":    "promotional signage is visible",
-    "no promotion":   None,
+    "highly visible promotional":    "promotional signage is visible",
+    "no promotional signs":   None,
 }
 
 
@@ -131,8 +133,15 @@ def build_mop_prompt(item: dict, mop_prompts: dict) -> str:  # noqa: C901
 
     # ── L1 / L2 ───────────────────────────────────────────────────────────────
     l1 = item["L1_scene"]["predicted_scene"]
-    l2 = list(dict.fromkeys(item["L2_fixtures"]["fixtures_detected"]))
-    l2_str = ", ".join(l2) if l2 else "unspecified fixtures"
+    
+    # Extract unique words from fixtures (handles 'display box display bin' -> 'display box bin')
+    l2_words = []
+    for f in item["L2_fixtures"]["fixtures_detected"]:
+        for word in f.split():
+            if word not in l2_words:
+                l2_words.append(word)
+    
+    l2_str = ", ".join(l2_words) if l2_words else "unspecified fixtures"
 
     # ── L0 global context (background only, not a hard constraint) ────────────
     l0_ctx = item.get("global_context", [])
@@ -147,7 +156,7 @@ def build_mop_prompt(item: dict, mop_prompts: dict) -> str:  # noqa: C901
         for p in top_candidates:
             if p.get("tag_type") == "Absence":
                 continue
-            # Minimum confidence gate (Hard ≥ 0.55, Soft ≥ 0.30)
+            # Minimum confidence gate (Hard >= 0.55, Soft >= 0.30)
             conf = p.get("confidence", 0)
             tag_type = p.get("tag_type", "")
             if tag_type == "Hard" and conf < 0.55:
@@ -179,19 +188,16 @@ def build_mop_prompt(item: dict, mop_prompts: dict) -> str:  # noqa: C901
         ""
     )
 
-    context_hint = (
-        f"Background context (for scene understanding ONLY — do not state as product fact):\n"
-        f"  {ctx_str}\n"
-        if ctx_str else ""
-    )
-
     observation_hint = (
         f"Observed operational details (include naturally if visible):\n  {obs_str}\n"
         if obs_str else ""
     )
 
     # ── Full Open+Anchor prompt ───────────────────────────────────────────────
-    prompt = f"""Describe this retail image in 2-3 natural sentences objectively.
+    # NOTE: global_context (L0) is intentionally NOT injected into the VLM prompt.
+    # It is stored in the JSON for internal pipeline use (e.g. Pipeline 3c, 8)
+    # but passing metadata like 'Year 2014' to the VLM caused hallucinations.
+    prompt = f"""You are a professional retail analyst. Write 2-3 sentences in natural, flowing prose. Do not use titles, bullet points, numbered lists, or headers.
 
 RULES:
 1. Describe what you actually SEE: scene type, layout, colours, arrangement, seasonal themes.
@@ -200,7 +206,7 @@ RULES:
 3. {ambiguous_section if ambiguous_section else 'State operational details only when clearly visible.'}
 4. Do NOT invent brand names, products, or prices beyond what is verified above.
 
-{context_hint}{observation_hint}Scene type: {l1} | Fixtures: {l2_str}
+{observation_hint}Scene type: {l1} | Fixtures: {l2_str}
 
 Write your caption now:"""
 
@@ -243,14 +249,32 @@ def run_captioning():
                         help=f"Ollama VLM model name (default: {DEFAULT_MODEL})")
     parser.add_argument("--sample", type=int, default=None,
                         help="Only process N images (stratified by cluster). Writes sample list for baseline.")
+    parser.add_argument("--from-sample-list", action="store_true",
+                        help="Instead of sampling, use the exact images listed in sample_image_list.json (for fair ablation).")
+    parser.add_argument("--suffix", type=str, default="",
+                        help="Suffix for K-selection ablation (e.g. 'k2' or 'k4'). If provided, appends _suffix to filenames.")
     args = parser.parse_args()
     vlm_model = args.model
+    suffix_str = f"_{args.suffix}" if args.suffix else ""
+    
+    in_path = f"data/cache/clustered_routes{suffix_str}.json"
+    out_path = f"data/cache/final_captions{suffix_str}.json"
+    mop_prompts_path = f"data/cache/mop_prompts{suffix_str}.json"
+    
     print(f"[VLM] Using model: {vlm_model}")
+    print(f"[PATHS] Input: {in_path} | Output: {out_path} | Prompts: {mop_prompts_path}")
 
-    with open(IN_PATH, "r", encoding="utf-8") as f:
+    with open(in_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    if args.sample:
+    if args.from_sample_list:
+        if not os.path.exists(SAMPLE_LIST_PATH):
+            raise FileNotFoundError(f"--from-sample-list used, but {SAMPLE_LIST_PATH} not found.")
+        with open(SAMPLE_LIST_PATH, "r", encoding="utf-8") as f:
+            valid_paths = set(json.load(f))
+        data = [item for item in data if item["image_path"] in valid_paths]
+        print(f"[SAMPLE] Loaded {len(data)} images exactly matching {SAMPLE_LIST_PATH}.")
+    elif args.sample:
         data = stratified_sample(data, args.sample)
         print(f"[SAMPLE] Stratified sample: {len(data)} images across clusters.")
         # Write shared sample list so baseline can process exact same images
@@ -261,11 +285,11 @@ def run_captioning():
         print(f"[SAMPLE] Sample list written → {SAMPLE_LIST_PATH}")
 
     # Load auto-generated cluster prompts (produced by pipeline_4)
-    mop_prompts = load_mop_prompts()
+    mop_prompts = load_mop_prompts(mop_prompts_path)
     print(f"[MOP PROMPTS] Loaded {len(mop_prompts)} cluster-specific templates.")
 
     # --- Checkpoint: skip already-captioned images ---
-    cache = load_existing_cache()
+    cache = load_existing_cache(out_path)
     already_done = len(cache)
     if already_done > 0:
         print(f"[CHECKPOINT] {already_done} captions already generated. Resuming...")
@@ -310,18 +334,18 @@ def run_captioning():
 
             # Auto-save every AUTOSAVE_INTERVAL captions
             if new_count % AUTOSAVE_INTERVAL == 0:
-                save_cache(cache)
+                save_cache(cache, out_path)
                 print(f"  [AUTO-SAVE] Checkpoint at {new_count} new captions (total: {len(cache)}).")
 
         except Exception as e:
             print(f"  [ERROR] {os.path.basename(img_path)}: {e}")
-            print("  Is `ollama serve` running and is the model downloaded?")
+            print("  Check if `ollama serve` is running and the model is downloaded.")
             log_error(img_path, e)
             continue
 
     # Final save
-    save_cache(cache)
-    print(f"\nAll captions saved to {OUT_PATH}")
+    save_cache(cache, out_path)
+    print(f"\nAll captions saved to {out_path}")
     print(f"Generated this session: {new_count} | Total in cache: {len(cache)}")
 
 if __name__ == "__main__":

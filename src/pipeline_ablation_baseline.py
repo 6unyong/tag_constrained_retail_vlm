@@ -13,11 +13,18 @@ Use --out to write results to a separate file without overwriting existing data.
 - Auto-save every 50 images
 """
 import os
+import sys
 import json
 import base64
 import requests
 import argparse
 from glob import glob
+
+# Fix Windows console encoding (cp949 can't handle accented chars)
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+elif sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf-8-sig"):
+    sys.stdout = open(sys.stdout.fileno(), mode="w", encoding="utf-8", buffering=1, closefd=False)
 
 DEFAULT_OUT_PATH  = "data/cache/baseline_captions.json"
 SAMPLE_LIST_PATH  = "data/cache/sample_image_list.json"  # written by pipeline_5 --sample
@@ -121,7 +128,8 @@ def generate_baseline_captions(
             txt = res.json().get("response", "").strip()
 
         except Exception as e:
-            print(f"  [ERROR] {os.path.basename(img_path)}: {e} - skipping.")
+            print(f"  [ERROR] {os.path.basename(img_path)}: {e}")
+            print("  Check if `ollama serve` is running and the model is downloaded.")
             log_error(img_path, e)
             txt = "GENERATION_ERROR"
 

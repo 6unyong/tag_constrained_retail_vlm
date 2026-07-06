@@ -633,18 +633,32 @@ def make_dim_row(label: str, mop_pct: float) -> str:
 def make_arch_comparison_section(judge_fair: dict | None) -> str:
     """Build the v3 Closed-World vs v4 Open+Anchor architecture comparison panel."""
 
-    # ── v3 numbers (from CHANGELOG / chair_metrics.json from April 17) ─────────
+    # ── v3 numbers (loaded from prior results if available) ─────────────────
     # v3: closed-world constraint ('ONLY use these tags'), Raw OCR injected,
     #     absolute LLM judge (1-10 scale, text-only, circular GT)
-    v3_chair_i_mop   = 41.14   # CHAIR_i for MOP captions under closed-world
-    v3_chair_i_base  = 89.89   # CHAIR_i for unconstrained baseline (unchanged)
+    v3_chair_path = "data/eval_results/chair_metrics_v3.json"
+    if os.path.exists(v3_chair_path):
+        with open(v3_chair_path, "r", encoding="utf-8") as _f:
+            _v3 = json.load(_f)
+        v3_chair_i_mop  = _v3.get("CHAIR_i_mop", 0.0)
+        v3_chair_i_base = _v3.get("CHAIR_i_base", 0.0)
+    else:
+        v3_chair_i_mop  = 0.0
+        v3_chair_i_base = 0.0
+        print("[WARN] v3 CHAIR results not found — v3 comparison will show 0%.")
     # v3 pairwise data not available (judge was absolute scores, not pairwise)
 
-    # ── v4 numbers (current results) ──────────────────────────────────────────
-    v4_chair_i_mop  = 78.41   # CHAIR_i for MOP captions under Open+Anchor
-    v4_chair_i_base = 88.87   # CHAIR_i for phi3 unconstrained baseline
-    # CHAIR_i increase = Open prompting uses richer vocabulary -> more tag mismatches
-    # This exposes the circular-GT limitation of CHAIR rather than true hallucination
+    # ── v4 numbers (loaded from current results) ──────────────────────────────
+    v4_chair_path = "data/eval_results/chair_metrics.json"
+    if os.path.exists(v4_chair_path):
+        with open(v4_chair_path, "r", encoding="utf-8") as _f:
+            _v4 = json.load(_f)
+        v4_chair_i_mop  = _v4.get("CHAIR_i", 0.0)
+        v4_chair_i_base = _v4.get("CHAIR_i_base", v4_chair_i_mop)
+    else:
+        v4_chair_i_mop  = 0.0
+        v4_chair_i_base = 0.0
+        print("[WARN] v4 CHAIR results not found — v4 comparison will show 0%.")
 
     # Pairwise judge (v4 only, Gemini 2.5 Flash, multimodal)
     n_fair = 0

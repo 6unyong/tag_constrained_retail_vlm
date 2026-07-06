@@ -9,7 +9,7 @@ Step 2 — Use those keywords as CLIP zero-shot prompts -> produce L3 probabilis
 - Auto-save every 50 images to prevent data loss on crash/OOM
 - Async semaphore: CONCURRENCY images processed in parallel for speed
 - UTF-8 stdout forced: prevents UnicodeEncodeError on Korean Windows CMD
-- Kanops fallback: if Gemini returns 0 keywords, use top GS1 categories as CLIP prompts
+- Kanops fallback: if Gemini returns 0 keywords, use top Kanops categories as CLIP prompts
 """
 import os
 import sys
@@ -35,7 +35,7 @@ from google import genai
 from google.genai import types
 
 client = genai.Client()
-ocr = PaddleOCR(use_angle_cls=True, lang="en", show_log=False)
+ocr = PaddleOCR(use_textline_orientation=True, lang="en")
 
 # ── Constants ──
 IN_PATH = "data/cache/l1_l2_tag_results.json"
@@ -108,7 +108,7 @@ def extract_ocr_text(image_path: str) -> list:
     return texts
 
 async def get_dynamic_keywords(
-    l1_scene: str, l2_fixtures: list, kanops_categories: list,
+    image_path: str, l1_scene: str, l2_fixtures: list,
     ocr_texts: list, store_context: str = "Unknown UK Supermarket",
     semaphore: asyncio.Semaphore = None
 ) -> list:
@@ -123,20 +123,20 @@ async def get_dynamic_keywords(
 
     prompt = f"""
     You are a grocery retail merchandising expert for '{store_context}'.
-    Given the following store context and VISUALLY EXTRACTED TEXT (OCR), generate a list of 10-20 specific product names 
-    that would likely be visible on these fixtures.
+    Look at the provided retail shelf image. Based on your visual inspection of the products 
+    and the VISUALLY EXTRACTED TEXT (OCR) below, generate a list of 10-20 specific product brand names 
+    that are actually visible on these fixtures.
 
     Scene zone: {l1_scene}
     Fixtures present: {', '.join(l2_fixtures)}
-    Known product categories (Kanops): {', '.join(kanops_categories)}
     
     VISUAL TEXT EXTRACTED FROM IMAGE (OCR): {ocr_str}
 
     CRITICAL RULES: 
-    1. DO NOT guess random brands just because of the store_context. Strictly rely on the VISUAL TEXT EXTRACTED to infer specific products and brand names.
-    2. DO NOT include packaging sizes, volumes (e.g., 500ml, 2L, multipack, gm). Output ONLY the core base product brand name (e.g., 'Coca-Cola Original Taste', 'Coca-Cola Zero Sugar').
-    3. Return specific, visually identifiable product names matching the actual texts (Do NOT mix competitor brands).
-    4. If OCR text says "No readable text", return at least 5 generic product names based on the scene/fixture type.
+    1. DO NOT guess random brands. Strictly rely on what you visually see in the image and the OCR text.
+    2. DO NOT include packaging sizes, volumes (e.g., 500ml, 2L, multipack, gm). Output ONLY the core base product brand name (e.g., 'Coca-Cola Original Taste', 'Almat Oxi-Bright').
+    3. Return specific, visually identifiable product names matching the actual image.
+    4. If the products are generic (e.g. fresh produce), return the generic name (e.g. 'Gala Apples').
     Return strict JSON matching the schema.
     """
 
@@ -146,9 +146,11 @@ async def get_dynamic_keywords(
     attempt_429 = 0
 
     async def _call():
+        from PIL import Image
+        img = Image.open(image_path)
         response = await client.aio.models.generate_content(
             model="gemini-2.5-flash",
-            contents=prompt,
+            contents=[img, prompt],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=DynamicProductKeywords,
@@ -243,8 +245,8 @@ async def process_single_image(
 
     safe_print(f"\n--- L3 Tagging: {os.path.basename(img_path)} ---")
     try:
-        l1_scene = item["L1"]["predicted_scene"]
-        l2_fixtures = item["L2"]["fixtures_detected"]
+        l1_scene = item["L1_scene"]["predicted_scene"]
+        l2_fixtures = item["L2_fixtures"]["fixtures_detected"]
 
         ocr_texts = extract_ocr_text(img_path)
         safe_print(f"  OCR extracted {len(ocr_texts)} text blocks")
@@ -252,9 +254,9 @@ async def process_single_image(
         meta_info = metadata_map.get(img_path, {})
         store_ctx = meta_info.get("retailer_metadata", "Unknown")
 
-        # Gemini API call with semaphore to cap concurrency
+        # Gemini API call with semaphore to cap concurrency (Option B: Visual)
         keywords = await get_dynamic_keywords(
-            l1_scene, l2_fixtures, kanops_categories, ocr_texts,
+            img_path, l1_scene, l2_fixtures, ocr_texts,
             store_context=store_ctx, semaphore=semaphore
         )
 
@@ -267,8 +269,8 @@ async def process_single_image(
             safe_print(f"  [SKIP] 0 keywords — no CLIP tagging. Marking as empty (no hallucination risk).")
             result = {
                 "image_path": img_path,
-                "L1": item["L1"],
-                "L2": item["L2"],
+                "L1_scene": item.get("L1_scene"),
+                "L2_fixtures": item.get("L2_fixtures"),
                 "L3_dynamic_keywords": [],
                 "L3_product_tags": [],
                 "ocr_text": ocr_texts,
@@ -280,8 +282,8 @@ async def process_single_image(
 
         result = {
             "image_path": img_path,
-            "L1": item["L1"],
-            "L2": item["L2"],
+            "L1_scene": item.get("L1_scene"),
+            "L2_fixtures": item.get("L2_fixtures"),
             "L3_dynamic_keywords": keywords,
             "L3_product_tags": l3_tags,
             "ocr_text": ocr_texts,

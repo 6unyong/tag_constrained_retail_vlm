@@ -1,13 +1,17 @@
 {
     "n_samples": 10686,
-    "optimal_k": 4,
+    "optimal_k": 2,
     "silhouette_scores_by_k": {
-        "4": 0.3072
+        "2": 0.556,
+        "3": 0.3224,
+        "4": 0.3072,
+        "5": 0.2947,
+        "6": 0.286,
+        "7": 0.2481,
+        "8": 0.2265
     },
     "cluster_distribution": {
-        "0": 2731,
-        "2": 3018,
-        "3": 2899,
+        "0": 8648,
         "1": 2038
     },
     "note": "Silhouette Score used for K selection (preferred over Elbow Method for objective, single-value academic justification). Gower's distance matrix was used in K-Medoids for mixed types."

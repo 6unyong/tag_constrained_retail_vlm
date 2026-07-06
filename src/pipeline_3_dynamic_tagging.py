@@ -57,7 +57,8 @@ def tag_l1_scene(image_path, clip_model, preprocess, device):
         "A photo of a standalone promotional display bin"
     ]
 
-    image = preprocess(Image.open(image_path)).unsqueeze(0).to(device)
+    with Image.open(image_path) as pil_img:
+        image = preprocess(pil_img).unsqueeze(0).to(device)
     text = clip.tokenize(scene_labels).to(device)
 
     with torch.no_grad():
@@ -79,8 +80,8 @@ def tag_l1_scene(image_path, clip_model, preprocess, device):
 def tag_l2_fixture(image_path, dino_model):
     """Task 9 - L2 Feature: Box Fixtures"""
     TEXT_PROMPT = "shelf . refrigerator . display box . display bin ."
-    BOX_TRESHOLD = 0.35
-    TEXT_TRESHOLD = 0.25
+    BOX_THRESHOLD = 0.35
+    TEXT_THRESHOLD = 0.25
 
     image_source, image_tensor = load_image(image_path)
 
@@ -88,8 +89,8 @@ def tag_l2_fixture(image_path, dino_model):
         model=dino_model,
         image=image_tensor,
         caption=TEXT_PROMPT,
-        box_threshold=BOX_TRESHOLD,
-        text_threshold=TEXT_TRESHOLD
+        box_threshold=BOX_THRESHOLD,
+        text_threshold=TEXT_THRESHOLD
     )
 
     return {
@@ -141,9 +142,12 @@ if __name__ == "__main__":
                 print(f"  [AUTO-SAVE] Checkpoint at {new_count} new images.")
 
         except Exception as e:
-            print(f"  [ERROR] {os.path.basename(img)}: {e} — skipping.")
+            print(f"  [ERROR] {os.path.basename(img)}: {e} - skipping.")
             log_error(img, e)
             continue
+        finally:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
     # Final save
     save_cache(cache)

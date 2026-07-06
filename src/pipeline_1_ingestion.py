@@ -2,16 +2,17 @@ import os
 import cv2
 import json
 import argparse
-import itertools
 import numpy as np
 import pandas as pd
-from datasets import load_dataset
 from PIL import Image
 from typing import Tuple
+from dotenv import load_dotenv
+from huggingface_hub import hf_hub_download
+
+load_dotenv()
 
 # Configuration
-DATASET_URI = "hf://datasets/dresserman/kanops-open-retail-imagery/train"
-METADATA_URI = "hf://datasets/dresserman/kanops-open-retail-imagery/metadata.csv"
+LOCAL_RAW_DIR = "data/raw/train"
 OUTPUT_DIR = "data/processed"
 BLUR_THRESHOLD = 50.0  # Adjustable Laplacian variance threshold
 META_OUT_PATH = "data/cache/metadata_mapped.json"
@@ -39,14 +40,34 @@ def get_fft_magnitude(image: Image.Image) -> float:
     
     return float(np.mean(img_back))
 
-def compute_dynamic_threshold(ds_stream, num_samples=100) -> float:
-    print(f"Scanning first {num_samples} images to calculate dynamic FFT threshold...")
+def construct_local_path(raw_file_name: str) -> str:
+    """Constructs the local safe path from the metadata file_name."""
+    parts = str(raw_file_name).split("/")
+    cleaned_parts = [p.strip() for p in parts]
+    cleaned_file_name = "/".join(cleaned_parts)
+    if cleaned_file_name.startswith("train/"):
+        cleaned_file_name = cleaned_file_name[6:]
+    return os.path.join(LOCAL_RAW_DIR, cleaned_file_name).replace("\\", "/")
+
+def compute_dynamic_threshold(meta: pd.DataFrame, num_samples=100) -> float:
+    print(f"Scanning first {num_samples} local images to calculate dynamic FFT threshold...")
     magnitudes = []
-    for i, item in enumerate(ds_stream):
-        if i >= num_samples:
-            break
-        mag = get_fft_magnitude(item["image"])
-        magnitudes.append(mag)
+    
+    for i in range(min(num_samples, len(meta))):
+        row = meta.iloc[i]
+        file_name = row.get("file_name", "")
+        local_path = construct_local_path(file_name)
+        
+        if not os.path.exists(local_path):
+            continue
+            
+        try:
+            with Image.open(local_path) as img:
+                mag = get_fft_magnitude(img)
+                magnitudes.append(mag)
+        except Exception as e:
+            pass
+            
         if (i + 1) % 20 == 0:
             print(f"  Scanned {i+1}/{num_samples} images...")
             
@@ -80,12 +101,19 @@ def save_metadata(metadata_map: dict):
         json.dump(metadata_map, f, indent=4)
 
 def ingest_data(limit: int = 0):
-    print(f"Loading Hugging Face Dataset from dresserman/kanops-open-retail-imagery (Streaming)...")
+    print("Loading Metadata CSV...")
+    hf_token = os.getenv("HF_TOKEN")
     try:
-        ds = load_dataset("dresserman/kanops-open-retail-imagery", split="train", streaming=True)
-        print("Successfully connected to dataset stream!")
+        metadata_path = hf_hub_download(
+            repo_id="dresserman/kanops-open-retail-imagery", 
+            filename="metadata.csv", 
+            repo_type="dataset", 
+            token=hf_token
+        )
+        meta = pd.read_csv(metadata_path)
+        print(f"Successfully loaded metadata! Total rows: {len(meta)}")
     except Exception as e:
-        print(f"Error loading dataset: {e}")
+        print(f"Error loading metadata from HF: {e}")
         return
 
     # Dynamic FFT Thresholding
@@ -94,95 +122,87 @@ def ingest_data(limit: int = 0):
             fft_threshold = json.load(f)["threshold"]
         print(f"Loaded cached optimal FFT threshold: {fft_threshold:.2f}")
     else:
-        fft_threshold = compute_dynamic_threshold(ds, num_samples=100)
+        fft_threshold = compute_dynamic_threshold(meta, num_samples=100)
         with open(FFT_CACHE_PATH, "w") as f:
             json.dump({"threshold": fft_threshold}, f)
-        # Re-initialize stream because we consumed the first 100
-        ds = load_dataset("dresserman/kanops-open-retail-imagery", split="train", streaming=True)
-
-    print(f"\nLoading Metadata CSV from {METADATA_URI}...")
-    try:
-        meta = pd.read_csv(METADATA_URI)
-        print(f"Successfully loaded metadata! Total rows: {len(meta)}")
-    except Exception as e:
-        print(f"Error loading metadata: {e}")
-        return
 
     metadata_map = load_existing_metadata()
     already_done = len(metadata_map)
     if already_done > 0:
         print(f"\n[CHECKPOINT] Resuming: {already_done} images already processed. Skipping them.")
 
-    stream = itertools.islice(ds, limit) if limit > 0 else ds
-    limit_str = str(limit) if limit > 0 else "ALL"
-    print(f"\nProcessing up to {limit_str} images...")
+    total_to_process = min(limit, len(meta)) if limit > 0 else len(meta)
+    print(f"\nProcessing up to {total_to_process} local images from '{LOCAL_RAW_DIR}'...")
 
     processed_count = 0
-    for i, item in enumerate(stream):
-        img = item["image"]
-
+    for i in range(total_to_process):
+        row = meta.iloc[i]
+        file_name = row.get("file_name", "")
+        
         save_path = os.path.join(OUTPUT_DIR, f"sample_{i}.jpg")
         save_path_norm = save_path.replace("\\", "/")
 
         if save_path in metadata_map or save_path_norm in metadata_map:
             continue
+            
+        local_path = construct_local_path(file_name)
+        if not os.path.exists(local_path):
+            print(f"  [WARN] Image {i}: Local file not found at {local_path}, skipping.")
+            continue
 
         try:
-            if i >= len(meta):
-                print(f"  [WARN] Image {i}: No metadata row available, skipping.")
-                continue
+            with Image.open(local_path) as img:
+                if img.mode != "RGB":
+                    img = img.convert("RGB")
+                    
+                blurry, lap_score, fft_score = is_blurry(img, fft_threshold)
+                status = "REJECTED (Blurry)" if blurry else "ACCEPTED (Sharp)"
 
-            row = meta.iloc[i]
+                retailer = row.get("retailer", np.nan)
+                store_name = row.get("store_name", np.nan)
 
-            blurry, lap_score, fft_score = is_blurry(img, fft_threshold)
-            status = "REJECTED (Blurry)" if blurry else "ACCEPTED (Sharp)"
+                path_retailer = "Unknown"
+                if isinstance(file_name, str) and "/" in file_name:
+                    parts = file_name.split("/")
+                    if len(parts) >= 3:
+                        path_retailer = parts[2]
 
-            retailer = row.get("retailer", np.nan)
-            store_name = row.get("store_name", np.nan)
-            file_name = row.get("file_name", "")
+                val_retailer = str(retailer) if pd.notna(retailer) else "Unknown"
+                val_store = str(store_name) if pd.notna(store_name) else "Unknown"
 
-            path_retailer = "Unknown"
-            if isinstance(file_name, str) and "/" in file_name:
-                parts = file_name.split("/")
-                if len(parts) >= 3:
-                    path_retailer = parts[2]
+                if val_retailer != "Unknown":
+                    actual_retailer = val_retailer
+                elif val_store != "Unknown":
+                    actual_retailer = val_store
+                else:
+                    actual_retailer = path_retailer
 
-            val_retailer = str(retailer) if pd.notna(retailer) else "Unknown"
-            val_store = str(store_name) if pd.notna(store_name) else "Unknown"
+                global_context = []
+                if isinstance(file_name, str):
+                    if "2014" in file_name: global_context.append("Year 2014")
+                    if "halloween" in file_name.lower(): global_context.append("Halloween Theme")
 
-            if val_retailer != "Unknown":
-                actual_retailer = val_retailer
-            elif val_store != "Unknown":
-                actual_retailer = val_store
-            else:
-                actual_retailer = path_retailer
+                img.save(save_path, format="JPEG", quality=95)
 
-            global_context = []
-            if isinstance(file_name, str):
-                if "2014" in file_name: global_context.append("Year 2014")
-                if "halloween" in file_name.lower(): global_context.append("Halloween Theme")
+                metadata_map[save_path] = {
+                    "image_id": int(row["image_id"]) if "image_id" in row else i,
+                    "retailer_metadata": actual_retailer,
+                    "global_context": global_context,
+                    "blur_score": round(lap_score, 2),
+                    "fft_score": round(fft_score, 2),
+                    "status": status
+                }
 
-            img.save(save_path)
+                ctx_str = f" | Context: {global_context}" if global_context else ""
+                print(f"Image {i}: Laplacian={lap_score:.1f}, FFT={fft_score:.1f} [{status}] | {actual_retailer}{ctx_str}")
+                processed_count += 1
 
-            metadata_map[save_path] = {
-                "image_id": int(row["image_id"]) if "image_id" in row else i,
-                "retailer_metadata": actual_retailer,
-                "global_context": global_context,
-                "blur_score": round(lap_score, 2),
-                "fft_score": round(fft_score, 2),
-                "status": status
-            }
-
-            ctx_str = f" | Context: {global_context}" if global_context else ""
-            print(f"Image {i}: Laplacian={lap_score:.1f}, FFT={fft_score:.1f} [{status}] | {actual_retailer}{ctx_str}")
-            processed_count += 1
-
-            if processed_count % 50 == 0:
-                save_metadata(metadata_map)
-                print(f"  [AUTO-SAVE] Checkpoint saved at {processed_count} new images.")
+                if processed_count % 50 == 0:
+                    save_metadata(metadata_map)
+                    print(f"  [AUTO-SAVE] Checkpoint saved at {processed_count} new images.")
 
         except Exception as e:
-            print(f"  [ERROR] Image {i} ({save_path}): {e} — skipping.")
+            print(f"  [ERROR] Image {i} ({local_path}): {e} — skipping.")
             continue
 
     save_metadata(metadata_map)
@@ -190,7 +210,7 @@ def ingest_data(limit: int = 0):
     print(f"Total processed this session: {processed_count} | Total in cache: {len(metadata_map)}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Ingest retail images from HuggingFace dataset.")
+    parser = argparse.ArgumentParser(description="Ingest retail images locally.")
     parser.add_argument(
         "--limit", type=int, default=0,
         help="Max number of images to process (0 = full dataset, default: 0)"

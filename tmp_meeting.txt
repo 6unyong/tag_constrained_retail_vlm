@@ -1,0 +1,49 @@
+﻿ck_level: Ambiguous
+Final VLM Prompt (Open+Anchor)
+You are a professional retail analyst writing concise shelf-inspection notes.
+RULES:
+1. Describe what you actually SEE.
+2. You MUST mention the following VERIFIED items ??they are confirmed present:
+- Favorite Day Black Cookie Icing
+- Favorite Day Cookie Icing
+3. State operational details only when clearly visible.
+4. Do NOT invent brand names...
+Background context: Halloween Theme
+Scene type: continuous grocery aisle shelf | Fixtures: shelf
+Write your caption now:
+VLM Outputs
+??Unconstrained Baseline:
+"A store shelf is full of Halloween candy bags arranged neatly by brand name... Some of the brands include Nestle Tic Tacs, and Ferrero Rocher among others..."
+Hallucinated 'Nestle Tic Tacs' and 'Ferrero Rocher'
+??Anchored Caption:
+"The image shows a retail store with a Halloween theme. The focus of the image is on four boxes of 'Favorite Day Black Cookie Icing'... In addition to these, there is another product on the shelf called 'Favorite Day Cookie Icing'..."
+Successfully anchors to 'Favorite Day Cookie Icing' and completely avoids baseline brand hallucinations
+Case 2 (Success): sample_10039.jpg (Halloween Kit Promotion)
+L0 Context
+Halloween Theme
+L1 Scene
+promotional endcap
+L2 Fixtures
+display box, shelf
+L3 Products
+Hard (0.72)
+Favorite Day Haunted Village Cookie House Kit
+L4 Attributes
+tidiness: disorganized
+Final VLM Prompt (Open+Anchor)
+You are a professional retail analyst writing concise shelf-inspection notes.
+RULES:
+1. Describe what you actually SEE.
+2. You MUST mention the following VERIFIED items:
+- Favorite Day Haunted Village Cookie House Kit
+3. State operational details only when clearly visible.
+4. Do NOT invent brand names...
+Background context: Halloween Theme
+Scene type: promotional endcap | Fixtures: display box, shelf
+Write your caption now:
+VLM Outputs
+??Unconstrained Baseline:
+"A store isle with a box that says 'Fabulous day' on it. A wall on the side of the building has several windows... The sky has clouds in it... The sun is shining brightly. There are no birds flying..."
+Severe out-of-domain hallucination, describing an outdoor scene instead of retail shelf
+??Anchored Caption:
+"A retail
