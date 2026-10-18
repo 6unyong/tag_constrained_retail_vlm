@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Bottom-Up Multimodal Architecture for Hallucination-Suppressed Retail Vision-Language Captioning</title>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reset.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reveal.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/theme/black.min.css" id="theme">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg-obsidian: #0b0f19;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent-primary: #38bdf8;
+            --accent-success: #34d399;
+            --accent-error: #f87171;
+            --accent-purple: #c084fc;
+        }
+
+        body, .reveal-viewport {
+            background-color: var(--bg-obsidian) !important;
+            color: var(--text-main);
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 28px;
+        }
+
+        .reveal {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            color: var(--text-main);
+            background-color: var(--bg-obsidian);
+        }
+
+        /* Slide Alignment Fixes */
+        .reveal .slides {
+            text-align: left;
+        }
+
+        .reveal .slides section {
+            padding: 40px 0;
+            box-sizing: border-box;
+            background: transparent;
+            height: 100%;
+        }
+        
+        .slide-content {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            height: 100%;
+            padding-top: 10px;
+            padding-bottom: 20px;
+        }
+
+        .reveal h1, .reveal h2, .reveal h3 {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            color: var(--text-main);
+            font-weight: 800;
+            text-transform: none;
+            letter-spacing: -0.02em;
+            margin: 0 0 35px 0;
+            line-height: 1.25;
+        }
+
+        .reveal p, .reveal li {
+            color: #cbd5e1;
+            font-size: 1.6rem;
+            line-height: 1.6;
+        }
+
+        .reveal strong {
+            color: #f8fafc;
+        }
+
+        /* Modern Grid Layouts */
+        .grid-2col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            align-items: center;
+        }
+
+        .grid-60-40 {
+            display: grid;
+            grid-template-columns: 1.3fr 1fr;
+            gap: 40px;
+            align-items: stretch;
+        }
+        
+        .grid-40-60 {
+            display: grid;
+            grid-template-columns: 1fr 1.3fr;
+            gap: 40px;
+            align-items: center;
+        }
+
+        .card-grid-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 35px;
+        }
+
+        /* Glass Card Component */
+        .glass-card {
+            background: rgba(22, 31, 48, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            padding: 35px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+            text-align: left;
+            box-sizing: border-box;
+        }
+
+        /* Kicker Badge Component */
+        .kicker {
+            display: inline-block;
+            align-self: flex-start;
+            width: fit-content;
+            padding: 8px 20px;
+            background: rgba(56, 189, 248, 0.15);
+            color: #38bdf8;
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            border-radius: 30px;
+            font-size: 1.2rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            margin-bottom: 25px;
+        }
+
+        .slide-content[style*="center"] .kicker {
+            align-self: center;
+        }
+
+        .badge-pass {
+            background: rgba(52, 211, 153, 0.15); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3);
+            padding: 6px 16px; border-radius: 16px; font-size: 1.1rem; font-weight: 700; display: inline-block;
+        }
+        .badge-fail {
+            background: rgba(248, 113, 113, 0.15); color: #f87171; border: 1px solid rgba(248, 113, 113, 0.3);
+            padding: 6px 16px; border-radius: 16px; font-size: 1.1rem; font-weight: 700; display: inline-block;
+        }
+        .badge-hard { background: rgba(52, 211, 153, 0.2); color: #34d399; border: 1px solid #34d399; padding: 4px 10px; border-radius: 12px; font-size: 1rem; }
+
+        .footer-brand {
+            position: absolute;
+            bottom: 30px;
+            right: 45px;
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #64748b;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            z-index: 100;
+            pointer-events: none;
+        }
+        .footer-brand span { color: #38bdf8; }
+
+        @media print {
+            @page {
+                size: 1920px 1080px;
+                margin: 0;
+            }
+            html.print-pdf, html.print-pdf body {
+                width: 1920px !important;
+                height: 1080px !important;
+                background-color: var(--bg-obsidian) !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+            .reveal .slides .pdf-page {
+                width: 1920px !important;
+                height: 1080px !important;
+                overflow: hidden !important;
+                page-break-after: always !important;
+                background-color: var(--bg-obsidian) !important;
+            }
+        }
+
+        ul.styled-list {
+            list-style: none;
+            padding-left: 0;
+            margin: 0;
+        }
+        ul.styled-list li {
+            position: relative;
+            padding-left: 35px;
+            margin-bottom: 20px;
+        }
+        ul.styled-list li::before {
+            content: "•";
+            position: absolute;
+            left: 0;
+            color: #38bdf8;
+            font-size: 2rem;
+            line-height: 1.1;
+        }
+
+        /* Image settings fixed to prevent cropping */
+        .img-shadow {
+            width: 100%;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            object-fit: contain; /* Prevents cropping */
+            display: block;
+            margin: 0 auto;
+        }
+
+        /* Code/Terminal Snippet blocks */
+        .code-box {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255,255,255,0.1);
+            padding: 24px;
+            border-radius: 12px;
+            font-family: monospace;
+            font-size: 1.3rem;
+            color: #e2e8f0;
+            white-space: pre-wrap;
+            line-height: 1.5;
+            margin-top: 15px;
+        }
+        .code-box.success { border-color: rgba(52, 211, 153, 0.5); }
+        .code-box.fail { border-color: rgba(248, 113, 113, 0.5); }
+
+        /* Tag Table styles */
+        .tag-table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin-top: 10px; 
+            font-size: 1.4rem; 
+            background: rgba(15, 23, 42, 0.6); 
+            border-radius: 8px; 
+            overflow: hidden; 
+        }
+        .tag-table th, .tag-table td { 
+            padding: 16px 20px; 
+            border-bottom: 1px solid rgba(255,255,255,0.1); 
+            text-align: left; 
+        }
+        .tag-table th { 
+            background: rgba(56, 189, 248, 0.15); 
+            color: var(--accent-primary); 
+            width: 30%; 
+            font-weight: 700; 
+            text-transform: uppercase;
+            font-size: 1.2rem;
+            letter-spacing: 0.05em;
+        }
+        .tag-table tr:last-child th, .tag-table tr:last-child td { 
+            border-bottom: none; 
+        }
+    </style>
+</head>
+<body>
+    <div class="reveal">
+        <div class="slides">
+
+            <!-- Slide 1: Title Slide -->
+            <section>
+                <div class="slide-content" style="align-items: center; text-align: center;">
+                    <span class="kicker" style="font-size: 1.2rem; padding: 10px 30px;">MSC DATA SCIENCE DISSERTATION</span>
+                    <h1 style="font-size: 4.5rem; margin-bottom: 40px; background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+                        Bottom-Up Multimodal Architecture for<br>Hallucination-Suppressed Retail Captioning
+                    </h1>
+                    <div style="width: 150px; height: 6px; background: linear-gradient(90deg, #38bdf8 0%, #34d399 100%); margin: 0 auto 40px auto; border-radius: 3px;"></div>
+                    <h3 style="font-size: 2.2rem; font-weight: 700; color: #38bdf8; margin-bottom: 15px;">Junyong Park</h3>
+                    <p style="font-size: 1.6rem; color: #94a3b8;">Supervisor: Dr Rita Borgo</p>
+                </div>
+            </section>
+
+            <!-- Slide 2: Background -->
+            <section>
+                <div class="slide-content">
+                    <span class="kicker">BACKGROUND</span>
+                    <h2 style="font-size: 3.8rem;">The Edge VLM Constraint in Retail</h2>
+                    <div class="grid-2col">
+                        <div class="glass-card">
+                            <h3 style="color: var(--accent-primary); font-size: 2.2rem;">Automated Shelf Monitoring</h3>
+                            <ul class="styled-list">
+                                <li>Retailers lose significant revenue due to undetected out-of-stock items and compliance failures.</li>
+                                <li>Traditional Computer Vision requires costly, rigid retraining for every new product SKU.</li>
+                                <li><strong>Vision-Language Models (VLMs)</strong> offer zero-shot recognition, adapting instantly without retraining.</li>
+                            </ul>
+                        </div>
+                        <div class="glass-card">
+                            <h3 style="color: var(--accent-purple); font-size: 2.2rem;">The Edge Deployment Reality</h3>
+                            <ul class="styled-list">
+                                <li>Cloud APIs (like GPT-4V or Gemini) are too slow, expensive, and raise GDPR privacy concerns for constant video feeds in physical stores.</li>
+                                <li><strong>Requirement:</strong> We must use <strong>Lightweight Local Models</strong> (e.g., LLaVA-Phi3 3.8B) deployed on edge servers.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Slide 3: The Core Problem -->
+            <section>
+                <div class="slide-content">
+                    <span class="kicker">THE PROBLEM</span>
+                    <h2 style="font-size: 3.8rem;">Generative Hallucination</h2>
+                    <div class="grid-60-40">
+                        <div class="glass-card" style="border-left: 5px solid var(--accent-error);">
+                            <h3 style="color: var(--accent-error); font-size: 2.2rem;">Physical Occlusion &amp; Visual Ambiguity</h3>
+                            <ul class="styled-list">
+                                <li>Retail environments are chaotic: harsh lighting, partially occluded products, and dense shelf layouts.</li>
+                                <li>When visual inputs are ambiguous, small edge VLMs rely heavily on pre-trained text priors rather than pixel evidence.</li>
+                                <li><strong>Consequence:</strong> The VLM hallucinates items that are statistically likely to be there, but physically absent.</li>
+                            </ul>
+                        </div>
+                        <div class="glass-card" style="padding: 25px; text-align: center; border-left: 5px solid var(--accent-error);">
+                            <img src="data/processed/sample_0.jpg" class="img-shadow" style="max-height: 280px;" alt="Hallucination Example">
+                            <h4 style="font-size: 1.4rem; color: var(--accent-error); margin-top: 20px;">VLM Generated Caption:</h4>
+                            <div class="caption-text fail" style="font-size: 1.3rem; padding: 15px; margin-top: 10px; background: rgba(15, 23, 42, 0.6); font-style: italic; border-left: 4px solid var(--accent-error);">
+                                "This display features various sandwiches including <strong>Tuna, Chicken, and Egg Mayo</strong>."
+                            </div>
+                            <p style="font-size: 1.3rem; color: var(--accent-error); margin-top: 15px; line-height: 1.4;">
+                                &bull; <strong>Error:</strong> The VLM hallucinates specific sandwich flavors based purely on language priors, ignoring the actual image.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Slide 4: Root Cause Analysis -->
+            <section>
+                <div class="slide-content">
+                    <span class="kicker">ROOT CAUSE ANALYSIS</span>
+                    <h2 style="font-size: 3.8rem;">The Fallacy of Top-Down Injection</h2>
+                    <div class="glass-card" style="padding: 40px;">
+                        <h3 style="color: var(--accent-error); font-size: 2.4rem; margin-bottom: 25px;">Why does Generative Hallucination occur?</h3>
+                        <p style="margin-bottom: 35px; font-size: 1.8rem;">Standard industry approaches attempt a <strong>Top-Down</strong> method: injecting specific retail taxonomies (e.g., GS1 SKUs) into the VLM prompt to restrict its answers.</p>
+                        
+                        <div class="grid-2col" style="gap: 30px; align-items: stretch;">
+                            <div style="background: rgba(248, 113, 113, 0.1); padding: 30px; border-radius: 12px; border: 1px solid rgba(248, 113, 113, 0.3);">
+                                <strong style="color: var(--accent-error); font-size: 1.6rem;">Forced Taxonomy Mapping:</strong><br>
+                                <span style="font-family: monospace; font-size: 1.4rem; line-height: 1.6; display: inline-block; margin-top: 15px;">The model is forced to map a generic, blurry sandwich onto a specific pre-defined SKU from the database (e.g., "Tuna" or "Egg Mayo") to fulfill the taxonomy requirement.</span>
+                            </div>
+                            <div style="background: rgba(15, 23, 42, 0.6); padding: 30px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1);">
+                                <strong style="color: var(--accent-primary); font-size: 1.6rem;">The Resulting Error:</strong><br>
+                                <span style="font-size: 1.4rem; line-height: 1.6; display: inline-block; margin-top: 15px;">Because the visual evidence isn't clear enough, the VLM relies on its <strong>Language Priors</strong> to guess the closest match. It hallucinates specific brand names or flavors that simply aren't in the image, destroying caption integrity.</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Slide 5: The Architectural Solution -->
+            <section>
+                <div class="slide-content">
+                    <span class="kicker">THE ARCHITECTURAL SOLUTION</span>
+                    <h2 style="font-size: 3.8rem;">Bottom-Up Physical Grounding (MOP)</h2>
+                    <div class="glass-card" style="border-left: 5px solid var(--accent-primary);">
+                        <h3 style="color: var(--accent-primary); font-size: 2.2rem; margin-bottom: 25px;">The MOP Pipeline Principle</h3>
+                        <p style="font-size: 1.7rem; margin-bottom: 35px;">To fundamentally stop hallucination, we must restrict the VLM using <strong>ONLY physical facts extracted directly from the image pixels</strong> before text generation begins.</p>
+                        
+                        <div class="grid-3col" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 25px;">
+                            <div style="background: rgba(15, 23, 42, 0.5); padding: 25px; border-radius: 8px; border: 1px solid rgba(56, 189, 248, 0.3);">
+                                <h4 style="color: #38bdf8; font-size: 1.6rem; margin-bottom: 15px;">1. Physical Anchors (OCR)</h4>
+                                <p style="font-size: 1.4rem; color: #cbd5e1; margin: 0;">We mechanically extract unforgeable text from the image, preventing the VLM from inventing product names.</p>
+                            </div>
+                            <div style="background: rgba(15, 23, 42, 0.5); padding: 25px; border-radius: 8px; border: 1px solid rgba(192, 132, 252, 0.3);">
+                                <h4 style="color: #c084fc; font-size: 1.6rem; margin-bottom: 15px;">2. CLIP Gatekeeper</h4>
+                                <p style="font-size: 1.4rem; color: #cbd5e1; margin: 0;">A mathematical filter that calculates Cosine Similarity, ruthlessly discarding any false candidate tags.</p>
+                            </div>
+                            <div style="background: rgba(15, 23, 42, 0.5); padding: 25px; border-radius: 8px; border: 1px solid rgba(52, 211, 153, 0.3);">
+                                <h4 style="color: #34d399; font-size: 1.6rem; margin-bottom: 15px;">3. Generation Restraint</h4>
+                                <p style="font-size: 1.4rem; color: #cbd5e1; margin: 0;">An Open+Anchor prompting strategy forces the VLM to rely strictly on the validated tags without suppressing its descriptive fluency.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Slide 6: Methodology & Spatial Hierarchy (Stage-by-Stage) -->
+            <section>
+                <div class="slide-content">
+                    <span class="kicker">METHODOLOGY I</span>
+                    <h2 style="font-size: 3.8rem;">Hierarchical Tag Extraction (L1-L4)</h2>
+                    <p style="font-size: 1.6rem; margin-bottom: 20px; color: #cbd5e1;">The pipeline extracts visual evidence hierarchically (Macro &rarr; Micro) to cognitively constrain the VLM before prompt generation.</p>
+                    <div class="grid-40-60">
+                        <!-- Left: Image -->
+                        <div style="text-align: center; height: 100%;">
+                            <img src="data/processed/sample_10000.jpg" class="img-shadow" style="max-height: 400px;" alt="Sample 10000">
+                            <p style="font-size: 1.3rem; margin-top: 15px; color: var(--text-muted);">Case Study: sample_10000.jpg</p>
+                        </div>
+                        <!-- Right: Tag Table -->
+                        <div>
+                            <table class="tag-table">
+                                <tr>
+                                    <th>L0 Context</th>
+                                    <td>Halloween Theme</td>
+                                </tr>
+                                <tr>
+                                    <th>L1 Scene</th>
+                                    <td>Promotional Endcap</td>
+                                </tr>
+                                <tr>
+                                    <th>L2 Fixtures</th>
+                                    <td>Display box</td>
+                                </tr>
+                                <tr>
+                                    <th>L3 Products</th>
+                                    <td>
+                                        <span class="badge-hard">Hard (0.75)</span> Halloween Spooky Nuggets
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>L4 Attributes</th>
+                                    <td>Promotion: limited offer at $2.49</td>
+                                </tr>
+                            </table>
+                            <p style="font-size: 1.3rem; margin-top: 20px; color: var(--accent-success);">
+                                <strong>Insight:</strong> Specific product names (L3) are successfully verified via physical evidence, eliminating the need for the VLM to guess.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Slide 7: K-Medoids Clustering -->
+            <section>
+                <div class="slide-content">
+                    <span class="kicker">METHODOLOGY II</span>
+                    <h2 style="font-size: 3.8rem;">K-Medoids Archetype Clustering (K=2)</h2>
+                    <div class="glass-card" style="padding: 40px;">
+                        <h3 style="color: var(--accent-success); font-size: 2.2rem; margin-bottom: 20px;">Dynamic Prompt Routing via Physical Layout</h3>
+                        <p style="font-size: 1.6rem; margin-bottom: 30px;">Using Gower's Distance, the pipeline mathematically categorizes the shelf into objective physical archetypes to provide the true semantic context for accurate prompt routing.</p>
+                        
+                        <div class="grid-2col" style="gap: 30px;">
+                            <div class="code-box" style="border-color: rgba(56, 189, 248, 0.4);">
+<strong style="color: var(--accent-primary); font-size: 1.6rem;">Archetype 1 (e.g., Cluttered Display)</strong>
+[Injected Prompt Template]
+Focus heavily on promotional branding and complex product clusters.
+
+VERIFIED PROMO ITEMS: {l3_tags}
+EXPECTED FIXTURES: {l2_tags}
+                            </div>
+                            <div class="code-box" style="border-color: rgba(192, 132, 252, 0.4);">
+<strong style="color: var(--accent-purple); font-size: 1.6rem;">Archetype 2 (e.g., Standard Shelf)</strong>
+[Injected Prompt Template]
+Focus on linear shelf layout and uniform stocking.
+
+VERIFIED STOCKED ITEMS: {l3_tags}
+EXPECTED FIXTURES: {l2_tags}
+                            </div>
+                        </div>
+                        <p style="font-size: 1.4rem; color: var(--text-muted); margin-top: 25px;">This prevents "Logical Leaps" by adapting the VLM generation strategy dynamically to the environment.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Slide 8: Visual Walkthrough Step 1 (OCR) -->
+            <section>
+                <div class="slide-content">
+                    <span class="kicker">VISUAL METHODOLOGY - STEP 1</span>
+                    <h2 style="font-size: 3.8rem;">Raw Image &amp; OCR Extraction</h2>
+                    <div class="grid-60-40">
+                        <div style="text-align: center;">
+                            <img src="data/processed/sample_10000.jpg" class="img-shadow" style="max-height: 480px;" alt="Raw Image">
+                            <p style="font-size: 1.3rem; margin-top: 15px; color: var(--text-muted);">Dense endcap with promotional items.</p>
+                        </div>
+                        <div class="glass-card">
+                            <h3 style="color: var(--accent-primary); font-size: 2.2rem;">PaddleOCR Physical Extraction</h3>
+                            <p style="font-size: 1.6rem; margin-bottom: 20px;">We use PaddleOCR to mechanically extract all visible text blobs to establish unforgeable physical anchors.</p>
+                            <div class="code-box" style="font-size: 1.5rem;">
+Found Text Anchors:
+- "Halloween"
+- "Spooky Nuggets"
+- "Limited Offer"
+- "2.49"
+                            </div>
+                            <p style="font-size: 1.4rem; color: var(--text-muted); margin-top: 25px;">This prevents the VLM from hallucinating arbitrary product names.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Slide 9: Visual Walkthrough Step 2 (CLIP Gatekeeper) -->
+            <section>
+                <div class="slide-content">
+                    <span class="kicker">VISUAL METHODOLOGY - STEP 2</span>
+                    <h2 style="font-size: 3.8rem;">The CLIP Gatekeeper &amp; Absence Filter</h2>
+                    <div class="glass-card" style="padding: 40px;">
+                        <p style="margin-bottom: 35px; font-size: 1.7rem;">We calculate <strong>Cosine Similarity</strong> between the extracted text embeddings and visual crops. A strict threshold ($\tau = 0.25$) is applied to discard false anchors (Absence filter).</p>
+                        
+                        <div class="grid-2col" style="gap: 40px;">
+                            <div class="code-box success">
+<strong style="font-size: 1.6rem;">Valid Anchor Check:</strong>
+Sim(Image, "Spooky Nuggets") = 0.29
+
+<span style="color: var(--accent-success); font-size: 1.6rem; margin-top: 15px; display: inline-block;">✔ PASS ( > 0.25 Threshold )</span>
+                            </div>
+                            <div class="code-box fail">
+<strong style="font-size: 1.6rem;">Hallucination Check (Injection):</strong>
+Sim(Image, "Diet Coke") = 0.18
+
+<span style="color: var(--accent-error); font-size: 1.6rem; margin-top: 15px; display: inline-block;">✘ REJECTED ( < 0.25 Threshold )</span>
+                            </div>
+                        </div>
+                        <p style="font-size: 1.5rem; color: var(--text-muted); margin-top: 35px;">By ruthlessly rejecting low-similarity tags, we mathematically block the injection of hallucinated product concepts before they reach the VLM.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Slide 10: Visual Walkthrough Step 3 (MOP Prompt) -->
+            <section>
+                <div class="slide-content">
+                    <span class="kicker">VISUAL METHODOLOGY - STEP 3</span>
+                    <h2 style="font-size: 3.8rem;">MOP Prompt Injection (Open+Anchor)</h2>
+                    <div class="glass-card" style="padding: 40px;">
+                        <div class="grid-60-40" style="gap: 40px;">
+                            <div>
+                                <h3 style="font-size: 1.8rem; color: var(--accent-primary); margin-bottom: 20px;">Dynamic Template Routing</h3>
+                                <p style="font-size: 1.4rem; margin-bottom: 20px;">The VLM is commanded to describe freely (Open), but strictly adhere to the verified physical anchors.</p>
+                                <div class="code-box" style="font-size: 1.3rem;">
+<strong>[Injected Prompt]</strong>
+Describe the scene in 2-3 natural sentences. 
+Detail the visual layout, colours, and themes.
+
+VERIFIED PRODUCT ANCHORS (MUST MENTION):
+- Halloween Spooky Nuggets
+- 2.49
+
+DO NOT CONFIRM (IF NOT VISUALLY EVIDENT):
+- Beef Patties, Diet Coke.
+                                </div>
+                            </div>
+                            <div style="border-left: 2px solid rgba(255,255,255,0.1); padding-left: 30px; display: flex; flex-direction: column; justify-content: center;">
+                                <h3 style="font-size: 1.8rem; color: var(--accent-success); margin-bottom: 20px;">Final VLM Caption</h3>
+                                <div class="caption-text pass" style="font-size: 1.5rem; padding: 25px; border-left: 5px solid var(--accent-success); background: rgba(15, 23, 42, 0.6); font-style: italic;">
+                                    "The image shows a display featuring <strong>Halloween Spooky Nuggets</strong> in orange boxes... limited offer at <strong>$2.49</strong>."
+                                </div>
+                                <p style="font-size: 1.3rem; color: var(--text-muted); margin-top: 25px;">The VLM retains visual fluency (colors, layout) while adhering flawlessly to the verified physical facts.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Slide 11: Demonstration (Full Pipeline Comparison) -->
+            <section>
+                <div class="slide-content">
+                    <span class="kicker">EVALUATION DEMONSTRATION</span>
+                    <h2 style="font-size: 3.8rem;">Baseline vs. MOP Captioning</h2>
+                    <div style="display: grid; grid-template-columns: 0.9fr 1.05fr 1.05fr; gap: 30px; align-items: stretch;">
+                        
+                        <!-- Left: Image -->
+                        <div class="glass-card" style="padding: 25px; text-align: center; display: flex; flex-direction: column; justify-content: center;">
+                            <img src="data/processed/sample_10000.jpg" class="img-shadow" style="max-height: 400px;" alt="Sample 10000">
+                            <div style="font-size: 1.4rem; font-weight: 700; margin-top: 25px;">Sample 10000</div>
+                        </div>
+
+                        <!-- Middle: Baseline -->
+                        <div class="glass-card" style="border-left: 5px solid var(--accent-error); padding: 30px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                                <span><strong style="font-size: 1.5rem;">Unconstrained Baseline</strong></span>
+                                <span class="badge-fail" style="font-size: 1.3rem;">FAIL</span>
+                            </div>
+                            <div class="caption-text fail" style="font-size: 1.3rem; padding: 20px; border-left: 4px solid var(--accent-error); background: rgba(15, 23, 42, 0.6); font-style: italic;">
+                                "...Three boxes are on a shelf of M&amp;Ms with a price tag... limited to the first 60 customers."
+                            </div>
+                            <p style="font-size: 1.3rem; color: var(--accent-error); margin-top: 25px; line-height: 1.5;">
+                                &bull; <strong>Hallucination:</strong> Invents "M&amp;Ms" brand and fabricates a "first 60 customers" clause.
+                            </p>
+                        </div>
+
+                        <!-- Right: MOP -->
+                        <div class="glass-card" style="border-left: 5px solid var(--accent-success); padding: 30px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                                <span><strong style="font-size: 1.5rem;">MOP Pipeline</strong></span>
+                                <span class="badge-pass" style="font-size: 1.3rem;">PASS</span>
+                            </div>
+                            <div class="caption-text pass" style="font-size: 1.3rem; padding: 20px; border-left: 4px solid var(--accent-success); background: rgba(15, 23, 42, 0.6); font-style: italic;">
+                                "...display at the end of an aisle featuring Halloween Spooky Nuggets in orange boxes... limited offer at $2.49."
+                            </div>
+                            <p style="font-size: 1.3rem; color: var(--accent-success); margin-top: 25px; line-height: 1.5;">
+                                &bull; <strong>Grounded:</strong> Accurately anchors on OCR text without inventing surrounding elements.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Slide 12: Quantitative Evaluation -->
+            <section>
+                <div class="slide-content">
+                    <span class="kicker">EMPIRICAL VALIDATION</span>
+                    <h2 style="font-size: 3.8rem;">Quantitative Results (10,686 Images)</h2>
+                    <div class="card-grid-3">
+                        <div class="glass-card">
+                            <div style="font-size: 4.5rem; font-weight: 800; color: var(--accent-success); margin-bottom: 20px;">-30.1%</div>
+                            <h3 style="font-size: 1.8rem;">L-CHAIR_i Drop</h3>
+                            <p style="font-size: 1.4rem;">Hallucination rate reduced from 70.47% to 40.36%, representing a <strong>42.7% relative reduction</strong> in false objects.</p>
+                        </div>
+                        <div class="glass-card">
+                            <div style="font-size: 4.5rem; font-weight: 800; color: #f39c12; margin-bottom: 20px;">50.0%</div>
+                            <h3 style="font-size: 1.8rem;">Human Annotation (N=100)</h3>
+                            <p style="font-size: 1.4rem;"><strong>MOP Win Rate:</strong> MOP won 50.0% vs Baseline 37.0% (13% ties). The low inter-rater agreement (&kappa; = 0.036) highlights the complex human trade-off between the Baseline's descriptive fluency and MOP's strict factual safety.</p>
+                        </div>
+                        <div class="glass-card">
+                            <div style="font-size: 4.5rem; font-weight: 800; color: var(--accent-purple); margin-bottom: 20px;">71.1%</div>
+                            <h3 style="font-size: 1.8rem;">LLM Judge Win Rate</h3>
+                            <p style="font-size: 1.4rem;">Gemini 3.5 Flash Judge closely mirrored human consensus.<br><br><span style="color: var(--accent-purple);">[Multi-dim Rubric: Visual Accuracy, Factual Completeness, Safe Uncertainty]</span></p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Slide 13: Limitations & Future Work -->
+            <section>
+                <div class="slide-content">
+                    <span class="kicker">DISCUSSION</span>
+                    <h2 style="font-size: 3.8rem;">Limitations &amp; Future Work</h2>
+                    <div class="grid-2col" style="gap: 40px; align-items: stretch;">
+                        
+                        <div class="glass-card" style="border-left: 5px solid var(--accent-error);">
+                            <h3 style="color: var(--accent-error); font-size: 2.2rem; margin-bottom: 15px;">Limitations</h3>
+                            <ul class="styled-list" style="font-size: 1.4rem;">
+                                <li style="margin-bottom: 15px;"><strong>Cascading OCR Errors:</strong> Because the VLM is anchored to tags, upstream garbled OCR text is forcibly integrated into the caption, causing structural errors.</li>
+                                <li><strong>Tag Starvation:</strong> Severe lighting or blur causing OCR failure leads to no tags being passed, forcing the VLM to produce overly brief captions.</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="glass-card" style="border-left: 5px solid var(--accent-success);">
+                            <h3 style="color: var(--accent-success); font-size: 2.2rem; margin-bottom: 15px;">Future Work</h3>
+                            <ul class="styled-list" style="font-size: 1.4rem;">
+                                <li style="margin-bottom: 15px;"><strong>Edge Hardware Acceleration:</strong> As edge environments improve in capacity and latency, larger VLMs can be used to naturally offset OCR noise.</li>
+                                <li><strong>Multi-Agent Automation:</strong> Upgrading to a multi-agent system where Vision and Analysis agents collaborate for human-level decision-making.</li>
+                            </ul>
+                        </div>
+
+                    </div>
+                </div>
+            </section>
+
+            <!-- Slide 14: Conclusion -->
+            <section>
+                <div class="slide-content" style="align-items: center; text-align: center;">
+                    <span class="kicker">CONCLUSION</span>
+                    <h2 style="font-size: 3.8rem; margin-bottom: 40px;">Evidence-First VLM Paradigm</h2>
+                    <div class="glass-card" style="padding: 60px; max-width: 1200px;">
+                        <p style="font-size: 1.6rem; line-height: 1.6; margin-bottom: 25px; color: #cbd5e1;">
+                            This dissertation addresses the critical barrier to deploying Vision-Language Models in retail automation: <strong>generative hallucination</strong>. By abandoning conventional top-down taxonomy injection, we developed a fine-tuning-free Bottom-Up Multimodal Architecture that structurally blocks hallucination at its source.
+                        </p>
+                        <p style="font-size: 1.6rem; line-height: 1.6; margin-bottom: 0px; color: #cbd5e1;">
+                            Through the integration of OCR physical anchors and Explicit Absence Encoding, the system establishes a new <strong>bottom-up epistemological framework</strong>. It proves that by strictly prioritising verified physical evidence over generative priors, small edge VLMs can achieve highly reliable visual reasoning without the massive costs of parameter scaling.
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Slide 15: Thank You -->
+            <section>
+                <div class="slide-content" style="align-items: center; text-align: center;">
+                    <h1 style="font-size: 6.5rem; font-weight: 800; background: linear-gradient(135deg, #38bdf8 0%, #34d399 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 20px;">THANK YOU</h1>
+                    <div style="width: 150px; height: 6px; background: rgba(255,255,255,0.1); margin: 0 auto 30px auto; border-radius: 3px;"></div>
+                    <p style="font-size: 1.5rem; color: #94a3b8; margin-top: 15px;">Junyong Park | King's College London</p>
+                </div>
+            </section>
+
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reveal.min.js"></script>
+    <script>
+        Reveal.initialize({
+            hash: true,
+            width: 1920,
+            height: 1080,
+            margin: 0.04,
+            center: false,
+            minScale: 0.2,
+            maxScale: 2.0,
+            transition: 'fade',
+            pdfSeparateFragments: false,
+            pdfMaxPagesPerSlide: 1
+        }).then(() => {
+            document.querySelectorAll('.reveal .slides section').forEach(sec => {
+                if (!sec.querySelector('.footer-brand')) {
+                    const fb = document.createElement('div');
+                    fb.className = 'footer-brand';
+                    fb.innerHTML = "KING'S <span>COLLEGE</span> LONDON";
+                    sec.appendChild(fb);
+                }
+            });
+        });
+    </script>
+</body>
+</html>
